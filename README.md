@@ -1,5 +1,7 @@
 # Crewcast
 
+[![Latest release](https://img.shields.io/github/v/release/vpjigin/CrewCast)](https://github.com/vpjigin/CrewCast/releases/latest) [![License: MIT](https://img.shields.io/github/license/vpjigin/CrewCast)](LICENSE)
+
 Share videos from your computer to any device, on your Wi‑Fi or over the internet, with no upload, no account and no cloud storage.
 
 ![Crewcast sharing a folder](docs/images/sharing-started.png)
@@ -9,6 +11,27 @@ Share videos from your computer to any device, on your Wi‑Fi or over the inter
 | ![Start screen](docs/images/initial-screen.png) | ![Dashboard](docs/images/dashboard.png) |
 
 **Crewcast** (by Solocrew) is a self-hosted Spring Boot app with a dark-themed desktop UI and a touch-friendly web player. Your files stay on your machine; viewers stream them while sharing is on.
+
+---
+
+## Download
+
+| Platform | Download | Notes |
+|----------|----------|-------|
+| macOS, Apple Silicon (M1/M2/M3/M4) | [Crewcast-macos-arm64.dmg](https://github.com/vpjigin/CrewCast/releases/latest/download/Crewcast-macos-arm64.dmg) | Open the .dmg, drag Crewcast to Applications |
+| macOS, Intel | [Crewcast-macos-x64.dmg](https://github.com/vpjigin/CrewCast/releases/latest/download/Crewcast-macos-x64.dmg) | same |
+| Windows 10/11 (64-bit) | [Crewcast-windows-x64.msi](https://github.com/vpjigin/CrewCast/releases/latest/download/Crewcast-windows-x64.msi) | Run the installer |
+| Linux, Debian/Ubuntu (64-bit) | [Crewcast-linux-x64.deb](https://github.com/vpjigin/CrewCast/releases/latest/download/Crewcast-linux-x64.deb) | `sudo apt install ./Crewcast-linux-x64.deb` |
+
+- [All releases and older versions](https://github.com/vpjigin/CrewCast/releases)
+- **Verify a download** — each release includes **`SHA256SUMS.txt`**. After downloading the checksums file alongside your installer:
+  - **macOS / Linux:** `shasum -a 256 Crewcast-macos-arm64.dmg` (replace with your filename) and compare to the line in `SHA256SUMS.txt`
+  - **Windows (PowerShell):** `Get-FileHash -Algorithm SHA256 .\Crewcast-windows-x64.msi`
+- **First launch** — installers are **not code-signed yet**. The project is **open source**; release builds are produced by **GitHub Actions** from the tagged commit.
+  - **macOS** may say the app is from an **unidentified developer** — **right-click → Open**, or **System Settings → Privacy & Security → Open Anyway**
+  - **Windows SmartScreen** may say **unknown publisher** — **More info → Run anyway**
+- **Java is included**; you do not need to install anything else.
+- **Linux arm64**, **Linux .rpm**, and **portable** builds are not available yet — [open an issue](https://github.com/vpjigin/CrewCast/issues/new) if you need one.
 
 ---
 
@@ -47,23 +70,6 @@ mvn spring-boot:run -pl desktop
 The embedded server binds to **`0.0.0.0` on a random port** (`server.port=0`). The desktop app shows the **Wi‑Fi** and **public** links (and QR) once sharing starts — there is no fixed port like 8080.
 
 Add folders or files in the UI, configure playback options in the left panel, then click **Start sharing**.
-
----
-
-## Build an installer (macOS)
-
-On a Mac with **JDK 21+** (including `jlink` and `jpackage`):
-
-```bash
-chmod +x packaging/build-macos.sh packaging/macos/generate-icns.sh
-./packaging/build-macos.sh
-```
-
-This produces **`dist/Crewcast-macos-arm64.dmg`** or **`dist/Crewcast-macos-x64.dmg`** (fixed names, no version in the filename) containing **Crewcast.app** and a bundled Java 21 runtime. End users do not need Java or Maven installed. App data is still stored only in `~/.crewcast/`, not inside the app bundle.
-
-The build is **unsigned**. On first launch, macOS Gatekeeper may block the app — use **right-click → Open**, or **System Settings → Privacy & Security → Open Anyway**.
-
-Windows and Linux installers use the same approach: `packaging/build-windows.ps1` → **`dist/Crewcast-windows-x64.msi`**, `packaging/build-linux.sh` → **`dist/Crewcast-linux-x64.deb`**. Set **`CREWCAST_RELEASE_VERSION`** (e.g. `1.0.0`) to match a release tag when testing version metadata.
 
 ---
 
