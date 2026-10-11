@@ -28,6 +28,10 @@
   </div>
   <div id="top-bar">
     <select id="audio-select" class="ctrl" aria-label="Audio track" hidden></select>
+    <select id="captions-select" class="ctrl" aria-label="Captions" hidden>
+      <option value="off">Captions</option>
+    </select>
+    <span id="captions-notice" class="captions-notice" hidden></span>
     <select id="speed-select" class="ctrl" aria-label="Playback speed">
       <option value="0.5">0.5x</option>
       <option value="1" selected>1x</option>
@@ -74,6 +78,7 @@
 <canvas id="thumb-canvas"></canvas>
 </body>
 <script src="/player/player-audio.js"></script>
+<script src="/player/player-subtitles.js"></script>
 <script src="/player/player.js"></script>
 </body>
 </html>

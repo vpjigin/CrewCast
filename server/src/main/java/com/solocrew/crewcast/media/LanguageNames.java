@@ -30,4 +30,15 @@ public final class LanguageNames {
         }
         return "Track " + (trackNumber + 1);
     }
+
+    public static String subtitleDisplayName(String langTag, int subtitleNumber) {
+        String norm = AudioTrackSelector.normalizeLanguage(langTag);
+        if (!norm.isBlank() && NAMES.containsKey(norm)) {
+            return NAMES.get(norm);
+        }
+        if (langTag != null && !langTag.isBlank()) {
+            return langTag.toUpperCase(Locale.ROOT);
+        }
+        return "Subtitle " + (subtitleNumber + 1);
+    }
 }

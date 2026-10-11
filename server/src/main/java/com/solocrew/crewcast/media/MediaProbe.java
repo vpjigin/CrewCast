@@ -66,6 +66,8 @@ public final class MediaProbe {
         String mainVideoCodec = null;
         List<AudioStreamInfo> audio = new ArrayList<>();
         int audioCounter = 0;
+        List<SubtitleStreamInfo> subtitles = new ArrayList<>();
+        int subtitleCounter = 0;
 
         for (JsonNode stream : streams) {
             String type = text(stream, "codec_type");
@@ -90,6 +92,22 @@ public final class MediaProbe {
                         text(tags, "title"),
                         stream.path("channels").asInt(0),
                         text(stream, "channel_layout")));
+                continue;
+            }
+            if ("subtitle".equals(type)) {
+                JsonNode tags = stream.path("tags");
+                JsonNode disposition = stream.path("disposition");
+                String codec = text(stream, "codec_name");
+                boolean supported = SubtitleCodecSupport.isTextCodec(codec);
+                subtitles.add(new SubtitleStreamInfo(
+                        index,
+                        subtitleCounter++,
+                        codec,
+                        text(tags, "language"),
+                        text(tags, "title"),
+                        disposition.path("forced").asInt(0) == 1,
+                        disposition.path("default").asInt(0) == 1,
+                        supported));
             }
         }
 
@@ -98,7 +116,8 @@ public final class MediaProbe {
         }
 
         boolean hevcWarning = isHevcCodec(mainVideoCodec);
-        return new ProbedMedia(mainVideoIndex, mainVideoCodec, hevcWarning, List.copyOf(audio));
+        return new ProbedMedia(
+                mainVideoIndex, mainVideoCodec, hevcWarning, List.copyOf(audio), List.copyOf(subtitles));
     }
 
     static boolean isAttachedPicture(JsonNode stream) {

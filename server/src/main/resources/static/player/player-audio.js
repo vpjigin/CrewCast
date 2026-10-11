@@ -80,6 +80,9 @@
     .then(function(data){
       document.title = data.title;
       window.__crewcastVideo = data;
+      if (window.__crewcastInitSubtitles) {
+        window.__crewcastInitSubtitles(data, id, withToken, fetchOpts);
+      }
       var video = document.getElementById('video');
       var thumbVideo = document.getElementById('thumb-video');
       bindVideoErrors(video);

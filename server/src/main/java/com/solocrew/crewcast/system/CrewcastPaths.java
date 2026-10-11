@@ -23,6 +23,10 @@ public final class CrewcastPaths {
         return home().resolve("cache");
     }
 
+    public static Path subtitleCacheDir() {
+        return cacheDir().resolve("subtitles");
+    }
+
     public static Path binDir() {
         return home().resolve("bin");
     }

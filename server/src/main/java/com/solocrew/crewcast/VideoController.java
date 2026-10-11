@@ -5,6 +5,8 @@ import com.solocrew.crewcast.media.AudioFixStatus;
 import com.solocrew.crewcast.media.BrowserPlayback;
 import com.solocrew.crewcast.media.LanguageNames;
 import com.solocrew.crewcast.media.ProbedMedia;
+import com.solocrew.crewcast.media.SubtitleService;
+import com.solocrew.crewcast.settings.DefaultCaptionsMode;
 import com.solocrew.crewcast.settings.SettingsStore;
 import com.solocrew.crewcast.share.ShareRegistry;
 import com.solocrew.crewcast.share.VideoFile;
@@ -36,11 +38,17 @@ public class VideoController {
     private final ShareRegistry shareRegistry;
     private final SettingsStore settingsStore;
     private final AudioFixService audioFixService;
+    private final SubtitleService subtitleService;
 
-    public VideoController(ShareRegistry shareRegistry, SettingsStore settingsStore, AudioFixService audioFixService) {
+    public VideoController(
+            ShareRegistry shareRegistry,
+            SettingsStore settingsStore,
+            AudioFixService audioFixService,
+            SubtitleService subtitleService) {
         this.shareRegistry = shareRegistry;
         this.settingsStore = settingsStore;
         this.audioFixService = audioFixService;
+        this.subtitleService = subtitleService;
     }
 
     @GetMapping("/api/videos")
@@ -91,6 +99,9 @@ public class VideoController {
                 ? "This video uses H.265 (HEVC). Some browsers need the converted stream for reliable playback."
                 : null;
 
+        List<SubtitleService.SubtitleDto> subtitles = subtitleService.listForApi(path);
+        DefaultCaptionsMode captionsDefault = settingsStore.getSettings().getDefaultCaptions();
+
         return ResponseEntity.ok(new VideoDetails(
                 video.id(),
                 video.displayName(),
@@ -99,7 +110,9 @@ public class VideoController {
                 selected,
                 new AudioProgressDto(audioStatus.status().name(), audioStatus.progress(), audioStatus.message()),
                 media.mainVideoCodec(),
-                warning));
+                warning,
+                subtitles,
+                captionsDefault.name()));
     }
 
     @GetMapping("/api/videos/{id}/audio-status")
@@ -291,6 +304,8 @@ public class VideoController {
             int selectedAudio,
             AudioProgressDto audio,
             String videoCodec,
-            String warning) {
+            String warning,
+            List<SubtitleService.SubtitleDto> subtitles,
+            String defaultCaptions) {
     }
 }

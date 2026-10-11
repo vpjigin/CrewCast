@@ -195,11 +195,31 @@ Key endpoints:
 | `GET /watch/{id}` | Custom player page |
 | `GET /stream/{id}` | Range-request video stream (used by the player) |
 | `GET /api/videos` | JSON list of `{ id, title }` |
-| `GET /api/videos/{id}` | `{ id, title, chaptersEnabled }` for the player |
+| `GET /api/videos/{id}` | Metadata for the player (audio tracks, subtitles, chapters flag) |
+| `GET /subtitles/{id}/{index}.vtt` | WebVTT caption file (UTF-8) for a supported track |
 
 ---
 
-## 10. Audio fix (ffmpeg)
+## 10. Subtitles
+
+The web player **Captions** menu (keyboard **c**) shows **Off** plus every **supported**
+text track. Choices are remembered per video in `localStorage` (`crewcast-captions-{id}`).
+
+- **Embedded** — SubRip, ASS/SSA, `mov_text`, and WebVTT streams are listed in
+  `GET /api/videos/{id}` and converted to WebVTT on first request (cached under
+  `~/.crewcast/cache/subtitles/`, separate from the audio remux cache).
+- **Sidecar** — In the same folder as `film.mkv`, Crewcast also looks for `film.srt`,
+  `film.vtt`, `film.en.srt`, `film.ml.srt`, and similar two- or three-letter language
+  suffixes. Sidecars are transcoded to UTF-8 WebVTT (SRT timestamps normalized, charset
+  detected from BOM / heuristics).
+- **Bitmap subtitles** (PGS, DVD, DVB, etc.) appear in the API with `supported: false` but
+  are not served yet.
+- **Settings → Default captions** — Off (default), match preferred audio language, or English
+  when the viewer has not picked captions before.
+
+---
+
+## 11. Audio fix (ffmpeg)
 
 When **Fix audio for browsers** is enabled (Settings or the left-panel toggle), Crewcast
 converts non-browser audio (AC3, E-AC3, DTS, etc.) and non-MP4 containers into a cached
@@ -219,12 +239,13 @@ real index (e.g. `-map 0:0`), and audio uses audio-relative indices (`-map 0:a:N
   `localStorage`).
 - **H.265 / HEVC** — Browsers may still struggle with HEVC in MP4; the player shows a short
   notice. Conversion keeps HEVC video but fixes audio.
-- **Limitations** — Subtitles are not passed through yet (`-sn`). The **first play** of a
-  non-default audio track waits for that track’s conversion (503 + progress overlay).
+- **Limitations** — Remuxed MP4 cache still drops subtitles (`-sn`); captions use separate
+  WebVTT URLs. The **first play** of a non-default audio track waits for that track’s
+  conversion (503 + progress overlay).
 
 ---
 
-## 11. Known limitations
+## 12. Known limitations
 
 - No authentication — anyone with network/tunnel access can browse and watch
   your videos. Fine for home/trusted-sharing use; add Spring Security if this
@@ -237,7 +258,7 @@ real index (e.g. `-map 0:0`), and audio uses audio-relative indices (`-map 0:a:N
 
 ---
 
-## 12. License
+## 13. License
 
 Crewcast is released under the [MIT License](LICENSE). Third-party libraries and fonts
 are listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

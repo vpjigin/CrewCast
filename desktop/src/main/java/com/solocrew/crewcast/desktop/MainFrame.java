@@ -906,6 +906,9 @@ public class MainFrame extends JFrame implements SharingUiListener {
         iconTile.setPreferredSize(new Dimension(36, 36));
         String iconName = entry.getKind() == ShareEntry.Kind.FOLDER ? "folder" : "video";
         iconTile.add(new JLabel(Icons.of(iconName, 18, CrewcastTheme.LINK)), "align center");
+        if (item.subtitleMeta() != null && !item.subtitleMeta().isBlank()) {
+            iconTile.setToolTipText(item.subtitleMeta());
+        }
 
         ElideLabel name = new ElideLabel();
         name.setFullText(Path.of(entry.getPath()).getFileName().toString());

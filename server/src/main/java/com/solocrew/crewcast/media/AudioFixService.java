@@ -170,12 +170,26 @@ public class AudioFixService {
         if (!Files.isDirectory(cache)) {
             return;
         }
-        try (var stream = Files.list(cache)) {
-            for (Path p : stream.toList()) {
-                Files.deleteIfExists(p);
-            }
-        }
+        deleteCacheTree(cache);
         jobs.clear();
+    }
+
+    private static void deleteCacheTree(Path cache) throws IOException {
+        if (!Files.isDirectory(cache)) {
+            return;
+        }
+        try (var walk = Files.walk(cache)) {
+            walk.sorted(java.util.Comparator.reverseOrder()).forEach(p -> {
+                try {
+                    Files.deleteIfExists(p);
+                } catch (IOException e) {
+                    throw new java.io.UncheckedIOException(e);
+                }
+            });
+        } catch (java.io.UncheckedIOException e) {
+            throw e.getCause();
+        }
+        Files.createDirectories(cache);
     }
 
     public long cacheSizeBytes() throws IOException {

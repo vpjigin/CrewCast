@@ -7,7 +7,16 @@ public record ProbedMedia(
         int mainVideoAbsoluteIndex,
         String mainVideoCodec,
         boolean hevcInBrowserWarning,
-        List<AudioStreamInfo> audioTracks) {
+        List<AudioStreamInfo> audioTracks,
+        List<SubtitleStreamInfo> subtitleTracks) {
+
+    public ProbedMedia(
+            int mainVideoAbsoluteIndex,
+            String mainVideoCodec,
+            boolean hevcInBrowserWarning,
+            List<AudioStreamInfo> audioTracks) {
+        this(mainVideoAbsoluteIndex, mainVideoCodec, hevcInBrowserWarning, audioTracks, List.of());
+    }
 
     public Optional<AudioStreamInfo> audioByRelativeIndex(int audioIndex) {
         return audioTracks.stream().filter(a -> a.audioIndex() == audioIndex).findFirst();

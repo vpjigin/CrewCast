@@ -2,6 +2,7 @@ package com.solocrew.crewcast.facade;
 
 import com.solocrew.crewcast.media.AudioFixService;
 import com.solocrew.crewcast.media.FfmpegManager;
+import com.solocrew.crewcast.media.SubtitleService;
 import com.solocrew.crewcast.access.AccessSession;
 import com.solocrew.crewcast.access.SharingState;
 import com.solocrew.crewcast.settings.AppSettings;
@@ -40,6 +41,7 @@ public class SharingService implements CloudflaredListener {
     private final ServerPortHolder portHolder;
     private final AudioFixService audioFixService;
     private final FfmpegManager ffmpegManager;
+    private final SubtitleService subtitleService;
 
     private final List<SharingUiListener> listeners = new CopyOnWriteArrayList<>();
 
@@ -53,7 +55,8 @@ public class SharingService implements CloudflaredListener {
             KeepAwakeManager keepAwakeManager,
             ServerPortHolder portHolder,
             AudioFixService audioFixService,
-            FfmpegManager ffmpegManager) {
+            FfmpegManager ffmpegManager,
+            SubtitleService subtitleService) {
         this.shareRegistry = shareRegistry;
         this.settingsStore = settingsStore;
         this.accessSession = accessSession;
@@ -64,6 +67,7 @@ public class SharingService implements CloudflaredListener {
         this.portHolder = portHolder;
         this.audioFixService = audioFixService;
         this.ffmpegManager = ffmpegManager;
+        this.subtitleService = subtitleService;
     }
 
     @PostConstruct
@@ -150,7 +154,12 @@ public class SharingService implements CloudflaredListener {
         List<ShareListItem> out = new ArrayList<>();
         for (int i = 0; i < entries.size(); i++) {
             ShareEntry e = entries.get(i);
-            out.add(new ShareListItem(i, e, describeShare(e), audioFixService.summarizeForShare(e),
+            out.add(new ShareListItem(
+                    i,
+                    e,
+                    describeShare(e),
+                    audioFixService.summarizeForShare(e),
+                    subtitleService.summarizeForShare(e),
                     audioFixService.hevcWarningForShare(e)));
         }
         return out;

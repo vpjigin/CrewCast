@@ -21,6 +21,7 @@ public class AppSettings {
     private boolean startTunnelWhenSharingStarts = true;
     private boolean keepComputerAwake = true;
     private String preferredAudioLanguage = "en";
+    private DefaultCaptionsMode defaultCaptions = DefaultCaptionsMode.OFF;
     private int thumbnailCount = 20;
     private boolean openAtLogin = false;
     private boolean fixAudioForBrowsers = false;
@@ -84,6 +85,14 @@ public class AppSettings {
 
     public void setPreferredAudioLanguage(String preferredAudioLanguage) {
         this.preferredAudioLanguage = preferredAudioLanguage;
+    }
+
+    public DefaultCaptionsMode getDefaultCaptions() {
+        return defaultCaptions != null ? defaultCaptions : DefaultCaptionsMode.OFF;
+    }
+
+    public void setDefaultCaptions(DefaultCaptionsMode defaultCaptions) {
+        this.defaultCaptions = defaultCaptions != null ? defaultCaptions : DefaultCaptionsMode.OFF;
     }
 
     public int getThumbnailCount() {

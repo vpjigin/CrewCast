@@ -6,6 +6,7 @@ import com.solocrew.crewcast.desktop.ui.StyledButton;
 import com.solocrew.crewcast.desktop.ui.ToggleSwitch;
 import com.solocrew.crewcast.facade.SharingService;
 import com.solocrew.crewcast.settings.AppSettings;
+import com.solocrew.crewcast.settings.DefaultCaptionsMode;
 import com.solocrew.crewcast.settings.PrepareAudioMode;
 import net.miginfocom.swing.MigLayout;
 
@@ -149,6 +150,10 @@ class SettingsDialog extends JDialog {
                 "Auto picks the first track; otherwise matches this language when available",
                 AUDIO_LANGS, workingCopy.getPreferredAudioLanguage());
 
+        JComboBox<DefaultCaptionsMode> defaultCaptions = addChoiceRow(body, "Default captions",
+                "Initial caption track in the web player when a viewer has not chosen before",
+                DefaultCaptionsMode.values(), workingCopy.getDefaultCaptions());
+
         JComboBox<Integer> cacheGb = addChoiceRow(body, "Audio cache limit",
                 "Converted audio/video remuxes are stored up to this size (LRU eviction)",
                 new Integer[]{5, 10, 20, 50, 100}, workingCopy.getAudioCacheMaxGb());
@@ -216,6 +221,7 @@ class SettingsDialog extends JDialog {
                 workingCopy.setPrepareAudioInAdvance(PrepareAudioMode.OFF);
             }
             workingCopy.setPreferredAudioLanguage((String) audioLang.getSelectedItem());
+            workingCopy.setDefaultCaptions((DefaultCaptionsMode) defaultCaptions.getSelectedItem());
             workingCopy.setAudioCacheMaxGb((Integer) cacheGb.getSelectedItem());
             workingCopy.setThumbnailCount((Integer) thumbCount.getSelectedItem());
             workingCopy.setKeepComputerAwake(keepAwake.isSelected());
@@ -314,6 +320,7 @@ class SettingsDialog extends JDialog {
         copy.setStartTunnelWhenSharingStarts(s.isStartTunnelWhenSharingStarts());
         copy.setKeepComputerAwake(s.isKeepComputerAwake());
         copy.setPreferredAudioLanguage(s.getPreferredAudioLanguage());
+        copy.setDefaultCaptions(s.getDefaultCaptions());
         copy.setThumbnailCount(s.getThumbnailCount());
         copy.setOpenAtLogin(s.isOpenAtLogin());
         copy.setFixAudioForBrowsers(s.isFixAudioForBrowsers());
