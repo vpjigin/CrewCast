@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.solocrew.crewcast.settings.AppSettings;
 import com.solocrew.crewcast.settings.FfmpegDownloadConsent;
 import com.solocrew.crewcast.settings.SettingsStore;
+import com.solocrew.crewcast.archive.SafeArchive;
 import com.solocrew.crewcast.system.CrewcastPaths;
 import com.solocrew.crewcast.system.CrewcastWriteGuard;
 import com.solocrew.crewcast.net.DownloadErrors;
@@ -36,9 +37,6 @@ import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
-
 @Component
 public class FfmpegDownloader {
 
@@ -404,40 +402,12 @@ public class FfmpegDownloader {
         }
     }
 
-    private static void extractTarXz(Path archive, Path destDir) throws IOException, InterruptedException {
-        Files.createDirectories(destDir);
-        Process p = new ProcessBuilder("tar", "-xJf", archive.toAbsolutePath().toString(), "-C", destDir.toString())
-                .redirectErrorStream(true)
-                .start();
-        String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        if (!p.waitFor(120, java.util.concurrent.TimeUnit.SECONDS)) {
-            p.destroyForcibly();
-            throw new IOException("tar extract timed out");
-        }
-        if (p.exitValue() != 0) {
-            throw new IOException("tar extract failed: " + out);
-        }
+    private static void extractTarXz(Path archive, Path destDir) throws IOException {
+        SafeArchive.extractTarXz(archive, destDir);
     }
 
     private static void unzip(Path zip, Path destDir) throws IOException {
-        Files.createDirectories(destDir);
-        try (ZipInputStream zis = new ZipInputStream(Files.newInputStream(zip))) {
-            ZipEntry entry;
-            while ((entry = zis.getNextEntry()) != null) {
-                if (entry.isDirectory()) {
-                    Files.createDirectories(destDir.resolve(entry.getName()));
-                    continue;
-                }
-                Path out = destDir.resolve(entry.getName()).normalize();
-                if (!out.startsWith(destDir)) {
-                    throw new IOException("Could not unpack the zip: path traversal blocked");
-                }
-                Files.createDirectories(out.getParent());
-                Files.copy(zis, out);
-            }
-        } catch (IOException e) {
-            throw new IOException("Could not unpack the zip", e);
-        }
+        SafeArchive.extractZip(zip, destDir);
     }
 
     private static void unzipSingleBinary(Path zip, Path destDir, String binaryName) throws IOException {
