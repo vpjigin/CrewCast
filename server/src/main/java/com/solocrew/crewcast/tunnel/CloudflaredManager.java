@@ -4,6 +4,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.solocrew.crewcast.settings.AppSettings;
 import com.solocrew.crewcast.settings.SettingsStore;
+import com.solocrew.crewcast.net.DownloadErrors;
+import com.solocrew.crewcast.net.DownloadFailureDetails;
+import com.solocrew.crewcast.net.ResilientHttpFetcher;
+import com.solocrew.crewcast.archive.SafeArchive;
 import com.solocrew.crewcast.system.CrewcastPaths;
 import com.solocrew.crewcast.system.CrewcastWriteGuard;
 import org.slf4j.Logger;
@@ -12,9 +16,7 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.URI;
-import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
@@ -57,9 +59,23 @@ public class CloudflaredManager {
     private volatile int localPort;
     private volatile AppSettings.TunnelProtocol protocol = AppSettings.TunnelProtocol.AUTOMATIC;
     private volatile String publicUrl;
+    private volatile DownloadFailureDetails lastFailure;
+    private volatile String lastDownloadUrl;
+    private volatile boolean http2RetryAttempted;
+    private volatile String connectedProtocol;
+
+    private final ResilientHttpFetcher http = new ResilientHttpFetcher(CloudflaredManager.class.getName());
 
     public CloudflaredManager(SettingsStore settingsStore) {
         this.settingsStore = settingsStore;
+    }
+
+    public DownloadFailureDetails lastFailure() {
+        return lastFailure;
+    }
+
+    public String connectedProtocol() {
+        return connectedProtocol;
     }
 
     public void addListener(CloudflaredListener listener) {
@@ -101,15 +117,56 @@ public class CloudflaredManager {
     }
 
     private void runTunnelLifecycle() {
+        http2RetryAttempted = false;
+        lastFailure = null;
         try {
             Path binary = ensureBinary();
             log.info("cloudflared: using binary {}", binary.toAbsolutePath());
-            launchProcess(binary);
+            if (isWindows() && !Files.isRegularFile(binary)) {
+                throw new IOException(windowsBlockedMessage(binary));
+            }
+            if (!launchWithOptionalHttp2Retry(binary)) {
+                throw new IOException("No public URL after tunnel attempts");
+            }
         } catch (Exception e) {
-            String msg = e.getMessage() != null ? e.getMessage() : "Tunnel failed";
+            log.error("cloudflared tunnel failed", e);
+            lastFailure = DownloadErrors.details(e, lastDownloadUrl != null ? lastDownloadUrl : "");
+            String msg = lastFailure.reason();
+            if (isWindowsBlocked(e, binaryOrNull())) {
+                msg = windowsBlockedMessage(localBinaryPath());
+            }
             setState(State.ERROR, msg);
-            notifyError(msg, true);
+            notifyError(msg, true, lastFailure);
         }
+    }
+
+    private Path binaryOrNull() {
+        try {
+            return localBinaryPath();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private boolean launchWithOptionalHttp2Retry(Path binary) throws IOException, InterruptedException {
+        try {
+            launchProcess(binary, protocol);
+        } catch (IOException first) {
+            if (isWindows()
+                    && !http2RetryAttempted
+                    && (protocol == AppSettings.TunnelProtocol.AUTOMATIC
+                            || protocol == AppSettings.TunnelProtocol.QUIC)) {
+                http2RetryAttempted = true;
+                log.info(
+                        "cloudflared: first attempt failed ({}), retrying with --protocol http2",
+                        first.getMessage());
+                stopInternal(false);
+                launchProcess(binary, AppSettings.TunnelProtocol.HTTP2);
+            } else {
+                throw first;
+            }
+        }
+        return publicUrl != null;
     }
 
     private Path ensureBinary() throws IOException, InterruptedException {
@@ -174,6 +231,11 @@ public class CloudflaredManager {
         return CrewcastPaths.binDir().resolve(name);
     }
 
+    /** E2E: official GitHub download, checksum verify, and safe extract. */
+    void downloadLatestReleaseForTest(Path dest) throws IOException, InterruptedException {
+        downloadLatest(dest);
+    }
+
     private void downloadLatest(Path dest) throws IOException, InterruptedException {
         Path binDir = CrewcastPaths.binDir();
         CrewcastWriteGuard.check(dest);
@@ -212,55 +274,34 @@ public class CloudflaredManager {
         if (!asset.downloadUrl().startsWith("https://github.com/cloudflare/cloudflared/releases/download/")) {
             throw new IOException("Unexpected download URL (expected official GitHub release asset)");
         }
-        HttpClient client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build();
-        Path tmp = dest.resolveSibling(dest.getFileName() + ".download");
-        Files.deleteIfExists(tmp);
-        Files.deleteIfExists(dest);
-        long bytesDownloaded;
+        lastDownloadUrl = asset.downloadUrl();
+        Path downloadTarget = asset.name().endsWith(".tgz") ? binDir.resolve(asset.name()) : dest;
+        ResilientHttpFetcher.deleteQuietly(downloadTarget);
+        ResilientHttpFetcher.deleteQuietly(ResilientHttpFetcher.partPath(downloadTarget));
+        ResilientHttpFetcher.deleteQuietly(dest);
         try {
-            bytesDownloaded = downloadToFile(client, asset.downloadUrl(), tmp, asset.size());
-            log.info("cloudflared: downloaded {} bytes to {}", bytesDownloaded, tmp);
-            verifySha256(asset.expectedSha256(), tmp);
+            long bytesDownloaded = http.downloadToFile(
+                    asset.downloadUrl(),
+                    downloadTarget,
+                    asset.size(),
+                    pct -> notifyDownload(pct, "Downloading cloudflared… " + pct + "%"));
+            log.info("cloudflared: downloaded {} bytes to {}", bytesDownloaded, downloadTarget.getFileName());
+            verifySha256(asset.expectedSha256(), downloadTarget);
             log.info("cloudflared: SHA-256 verified for {}", asset.name());
             if (asset.name().endsWith(".tgz")) {
-                extractTgz(tmp, dest);
-                Files.deleteIfExists(tmp);
+                extractTgz(downloadTarget, dest);
+                ResilientHttpFetcher.deleteQuietly(downloadTarget);
                 log.info("cloudflared: extracted archive to {} ({} bytes)", dest, Files.size(dest));
             } else {
-                Files.move(tmp, dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
                 log.info("cloudflared: installed to {} ({} bytes)", dest, Files.size(dest));
             }
         } catch (Exception e) {
-            Files.deleteIfExists(tmp);
-            Files.deleteIfExists(dest);
+            ResilientHttpFetcher.deleteQuietly(downloadTarget);
+            ResilientHttpFetcher.deleteQuietly(ResilientHttpFetcher.partPath(downloadTarget));
+            ResilientHttpFetcher.deleteQuietly(dest);
             throw e instanceof IOException ? (IOException) e : new IOException(e.getMessage(), e);
         }
         notifyDownload(100, "Download complete");
-    }
-
-    private long downloadToFile(HttpClient client, String downloadUrl, Path tmp, long expectedSize)
-            throws IOException, InterruptedException {
-        HttpRequest request = HttpRequest.newBuilder(URI.create(downloadUrl)).GET().build();
-        HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
-        if (response.statusCode() >= 400) {
-            throw new IOException("Download failed: HTTP " + response.statusCode());
-        }
-        long total = response.headers().firstValueAsLong("Content-Length").orElse(expectedSize);
-        long done = 0;
-        try (InputStream in = response.body();
-             OutputStream out = Files.newOutputStream(tmp)) {
-            byte[] buf = new byte[8192];
-            int read;
-            while ((read = in.read(buf)) >= 0) {
-                out.write(buf, 0, read);
-                done += read;
-                if (total > 0) {
-                    int pct = (int) Math.min(100, (done * 100) / total);
-                    notifyDownload(pct, "Downloading cloudflared… " + pct + "%");
-                }
-            }
-        }
-        return done;
     }
 
     private record ReleaseAsset(String name, String downloadUrl, long size, String expectedSha256) {
@@ -295,7 +336,7 @@ public class CloudflaredManager {
     private void verifySha256(String expectedHex, Path file) throws IOException {
         String actual = sha256Hex(file);
         if (!expectedHex.equalsIgnoreCase(actual)) {
-            throw new IOException("cloudflared download failed SHA-256 verification");
+            throw new IOException("Checksum mismatch (expected " + expectedHex + ", got " + actual + ")");
         }
     }
 
@@ -325,18 +366,10 @@ public class CloudflaredManager {
             throw new IOException("Unexpected .tgz on Windows");
         }
         CrewcastWriteGuard.check(dest);
-        try {
-            Process p = new ProcessBuilder("tar", "-xzf", tgz.toString(), "-C", CrewcastPaths.binDir().toString())
-                    .redirectErrorStream(true)
-                    .start();
-            if (p.waitFor() != 0) {
-                throw new IOException("Failed to extract cloudflared archive");
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("Interrupted while extracting cloudflared", e);
-        }
-        Path extracted = CrewcastPaths.binDir().resolve("cloudflared");
+        Path binDir = CrewcastPaths.binDir();
+        Files.createDirectories(binDir);
+        SafeArchive.extractTarGz(tgz, binDir);
+        Path extracted = binDir.resolve("cloudflared");
         if (Files.exists(extracted)) {
             Files.move(extracted, dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         } else if (!Files.exists(dest)) {
@@ -345,83 +378,113 @@ public class CloudflaredManager {
     }
 
     private JsonNode fetchLatestRelease() throws IOException, InterruptedException {
-        HttpClient client = HttpClient.newHttpClient();
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(GITHUB_LATEST_RELEASE))
                 .header("Accept", "application/vnd.github+json")
                 .header("User-Agent", "Crewcast")
                 .GET()
                 .build();
-        HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> resp = http.client().send(req, HttpResponse.BodyHandlers.ofString());
         if (resp.statusCode() >= 400) {
             throw new IOException("GitHub API error: " + resp.statusCode());
         }
         return mapper.readTree(resp.body());
     }
 
-    private void launchProcess(Path binary) throws IOException {
+    private void launchProcess(Path binary, AppSettings.TunnelProtocol useProtocol) throws IOException {
+        publicUrl = null;
         List<String> cmd = new ArrayList<>();
         cmd.add(binary.toAbsolutePath().toString());
         cmd.add("tunnel");
         cmd.add("--no-autoupdate");
         cmd.add("--url");
         cmd.add("http://localhost:" + localPort);
-        if (protocol == AppSettings.TunnelProtocol.QUIC) {
+        String protocolLabel = "automatic";
+        if (useProtocol == AppSettings.TunnelProtocol.QUIC) {
             cmd.add("--protocol");
             cmd.add("quic");
-        } else if (protocol == AppSettings.TunnelProtocol.HTTP2) {
+            protocolLabel = "quic";
+        } else if (useProtocol == AppSettings.TunnelProtocol.HTTP2) {
             cmd.add("--protocol");
             cmd.add("http2");
+            protocolLabel = "http2";
         }
-        log.info("cloudflared: launching {}", String.join(" ", cmd));
+        log.info("cloudflared: launching protocol={} cmd={}", protocolLabel, String.join(" ", cmd));
 
         ProcessBuilder pb = new ProcessBuilder(cmd);
         pb.redirectErrorStream(true);
         process = pb.start();
         setState(State.STARTING, "Waiting for public URL…");
 
-        readerThread = new Thread(() -> readOutput(process), "cloudflared-reader");
+        readerThread = new Thread(() -> readOutput(process, useProtocol), "cloudflared-reader");
         readerThread.setDaemon(true);
         readerThread.start();
 
-        Thread watchdog = new Thread(() -> {
-            try {
-                boolean finished = process.waitFor(30, TimeUnit.SECONDS);
-                if (publicUrl == null && finished) {
-                    setState(State.ERROR, "cloudflared exited before URL was ready");
-                    notifyError("Tunnel process exited before a URL appeared", true);
-                } else if (publicUrl == null) {
-                    setState(State.ERROR, "No public URL after 30 seconds");
-                    notifyError("No public URL after 30 seconds", true);
-                    stopInternal(false);
+        Process proc = process;
+        try {
+            boolean finished = proc.waitFor(30, TimeUnit.SECONDS);
+            if (publicUrl == null && finished) {
+                int code = proc.exitValue();
+                String msg = "cloudflared exited with code " + code;
+                if (isWindows() && (code == 1 || code == -1073741515) && !Files.isRegularFile(binary)) {
+                    msg = windowsBlockedMessage(binary);
                 }
-            } catch (InterruptedException ignored) {
+                throw new IOException(msg);
             }
-        }, "cloudflared-watchdog");
-        watchdog.setDaemon(true);
-        watchdog.start();
+            if (publicUrl == null) {
+                stopInternal(false);
+                throw new IOException("No public URL after 30 seconds");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while waiting for tunnel URL", e);
+        }
     }
 
-    private void readOutput(Process proc) {
+    private void readOutput(Process proc, AppSettings.TunnelProtocol useProtocol) {
         try (var reader = proc.inputReader()) {
             String line;
             while ((line = reader.readLine()) != null) {
+                log.info("cloudflared: {}", line);
                 Matcher m = TUNNEL_URL.matcher(line);
                 if (m.find() && publicUrl == null) {
                     publicUrl = m.group().replaceAll("/$", "");
-                    log.info("cloudflared: public URL {}", publicUrl);
+                    connectedProtocol = protocolLabel(useProtocol);
+                    log.info("cloudflared: public URL {} (protocol {})", publicUrl, connectedProtocol);
                     setState(State.CONNECTED, publicUrl);
                     for (CloudflaredListener l : listeners) {
                         l.onTunnelUrl(publicUrl);
                     }
                 }
             }
-        } catch (IOException ignored) {
+        } catch (IOException e) {
+            log.warn("cloudflared output read failed", e);
         }
-        if (publicUrl == null && proc == process) {
-            setState(State.ERROR, "Tunnel process ended");
-            notifyError("Tunnel process ended unexpectedly", true);
+    }
+
+    private static String protocolLabel(AppSettings.TunnelProtocol useProtocol) {
+        return switch (useProtocol) {
+            case QUIC -> "quic";
+            case HTTP2 -> "http2";
+            case AUTOMATIC -> "automatic";
+        };
+    }
+
+    private static String windowsBlockedMessage(Path binary) {
+        return "Windows may have blocked or removed "
+                + (binary != null ? binary.getFileName() : "cloudflared.exe")
+                + " (Windows Defender or SmartScreen). Allow the app in Security settings, or install cloudflared manually.";
+    }
+
+    private static boolean isWindowsBlocked(Exception e, Path binary) {
+        if (!isWindows()) {
+            return false;
         }
+        if (binary != null && !Files.isRegularFile(binary)) {
+            return true;
+        }
+        String msg = e.getMessage() != null ? e.getMessage().toLowerCase(Locale.ROOT) : "";
+        return msg.contains("exited with code") || msg.contains("blocked");
     }
 
     private synchronized void stopInternal(boolean idle) {
@@ -490,13 +553,13 @@ public class CloudflaredManager {
         }
     }
 
-    private void notifyError(String msg, boolean retryable) {
+    private void notifyError(String msg, boolean retryable, DownloadFailureDetails details) {
         String full = msg;
-        if (msg != null && (msg.contains("SHA-256") || msg.contains("digest") || msg.contains("Download failed"))) {
+        if (msg != null && (msg.contains("Checksum") || msg.contains("digest") || msg.contains("Download failed"))) {
             full = msg + " — " + installHint() + ", or choose a cloudflared binary in Settings.";
         }
         for (CloudflaredListener l : listeners) {
-            l.onError(full, retryable);
+            l.onError(full, retryable, details);
         }
     }
 }

@@ -7,6 +7,7 @@ final class MediaTestFixtures {
 
     private static Path coverArt;
     private static Path h264;
+    private static Path silentH264;
 
     private MediaTestFixtures() {
     }
@@ -26,6 +27,15 @@ final class MediaTestFixtures {
                 h264 = H264Fixture.create();
             }
             return h264;
+        }
+    }
+
+    static Path silentH264() throws Exception {
+        synchronized (MediaTestFixtures.class) {
+            if (silentH264 == null) {
+                silentH264 = H264Fixture.createSilent();
+            }
+            return silentH264;
         }
     }
 }

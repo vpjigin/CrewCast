@@ -4,6 +4,10 @@ import com.solocrew.crewcast.media.AudioFixService;
 import com.solocrew.crewcast.media.FfmpegDownloadAssets;
 import com.solocrew.crewcast.media.FfmpegDownloadListener;
 import com.solocrew.crewcast.media.FfmpegDownloader;
+import com.solocrew.crewcast.net.DownloadFailureDetails;
+import com.solocrew.crewcast.net.DownloadErrors;
+import com.solocrew.crewcast.system.CrewcastDiagnostics;
+import com.solocrew.crewcast.system.CrewcastPaths;
 import com.solocrew.crewcast.media.FfmpegManager;
 import com.solocrew.crewcast.media.VideoBrowserContainers;
 import com.solocrew.crewcast.media.SubtitleService;
@@ -13,6 +17,7 @@ import com.solocrew.crewcast.access.SharingState;
 import com.solocrew.crewcast.settings.AppSettings;
 import com.solocrew.crewcast.settings.SettingsStore;
 import com.solocrew.crewcast.settings.ShareEntry;
+import com.solocrew.crewcast.share.ShareExposeFilter;
 import com.solocrew.crewcast.share.ShareRegistry;
 import com.solocrew.crewcast.system.KeepAwakeManager;
 import com.solocrew.crewcast.system.LanIpDetector;
@@ -98,7 +103,9 @@ public class SharingService implements CloudflaredListener, FfmpegDownloadListen
                 ffmpegDownloader.downloadIfNeeded(true);
                 ffmpegManager.recheck();
             } catch (Exception ex) {
-                onFfmpegDownloadFinished(false, ex.getMessage() != null ? ex.getMessage() : "Download failed");
+                DownloadFailureDetails d = ffmpegDownloader.lastFailure();
+                String msg = d != null ? d.reason() : DownloadErrors.plainReason(ex, null);
+                onFfmpegDownloadFinished(false, msg);
             }
         }, "ffmpeg-download");
         t.setDaemon(true);
@@ -107,6 +114,22 @@ public class SharingService implements CloudflaredListener, FfmpegDownloadListen
 
     public boolean isFfmpegDownloadInProgress() {
         return ffmpegDownloader.isDownloadInProgress();
+    }
+
+    public DownloadFailureDetails lastFfmpegDownloadFailure() {
+        return ffmpegDownloader.lastFailure();
+    }
+
+    public DownloadFailureDetails lastTunnelFailure() {
+        return cloudflaredManager.lastFailure();
+    }
+
+    public String runDiagnosticsReport() {
+        return CrewcastDiagnostics.runReport();
+    }
+
+    public Path logsDirectory() {
+        return CrewcastPaths.logsDir();
     }
 
     public boolean addedShareIncludesNonNativeVideo(Path path, ShareEntry.Kind kind) throws IOException {
@@ -218,11 +241,12 @@ public class SharingService implements CloudflaredListener, FfmpegDownloadListen
         List<ShareListItem> out = new ArrayList<>();
         for (int i = 0; i < entries.size(); i++) {
             ShareEntry e = entries.get(i);
+            int videos = countVideosInShare(e);
             out.add(new ShareListItem(
                     i,
                     e,
                     describeShare(e),
-                    audioFixService.summarizeForShare(e),
+                    videos > 0 ? audioFixService.summarizeForShare(e) : "",
                     subtitleService.summarizeForShare(e),
                     audioFixService.hevcWarningForShare(e)));
         }
@@ -354,22 +378,61 @@ public class SharingService implements CloudflaredListener, FfmpegDownloadListen
         try {
             if (entry.getKind() == ShareEntry.Kind.FILE) {
                 long size = Files.size(path);
-                return "1 video · " + humanSize(size);
+                if (ShareRegistry.isVideoFileName(path.getFileName().toString())) {
+                    return "1 file · 1 video · " + humanSize(size);
+                }
+                return "1 file · " + humanSize(size);
             }
-            int count = 0;
-            long size = 0;
-            try (var walk = Files.walk(path)) {
-                var files = walk.filter(Files::isRegularFile)
-                        .filter(p -> ShareRegistry.isVideoFileName(p.getFileName().toString()))
-                        .toList();
-                count = files.size();
-                for (Path f : files) {
-                    size += Files.size(f);
+            Path root = path.toAbsolutePath().normalize();
+            int fileCount = 0;
+            int videoCount = 0;
+            long totalSize = 0;
+            try (var walk = Files.walk(root)) {
+                for (Path f : walk.filter(Files::isRegularFile).toList()) {
+                    if (!ShareExposeFilter.shouldExposeFromFolder(root, f)) {
+                        continue;
+                    }
+                    fileCount++;
+                    totalSize += Files.size(f);
+                    if (ShareRegistry.isVideoFileName(f.getFileName().toString())) {
+                        videoCount++;
+                    }
                 }
             }
-            return count + (count == 1 ? " video · " : " videos · ") + humanSize(size);
+            if (fileCount == 0) {
+                return "0 files · 0 B";
+            }
+            StringBuilder meta = new StringBuilder();
+            meta.append(fileCount).append(fileCount == 1 ? " file" : " files");
+            if (videoCount > 0) {
+                meta.append(" · ").append(videoCount).append(videoCount == 1 ? " video" : " videos");
+            }
+            meta.append(" · ").append(humanSize(totalSize));
+            return meta.toString();
         } catch (IOException ex) {
             return "Unavailable";
+        }
+    }
+
+    private int countVideosInShare(ShareEntry entry) {
+        Path path = Path.of(entry.getPath());
+        try {
+            if (entry.getKind() == ShareEntry.Kind.FILE) {
+                return ShareRegistry.isVideoFileName(path.getFileName().toString()) ? 1 : 0;
+            }
+            Path root = path.toAbsolutePath().normalize();
+            int videos = 0;
+            try (var walk = Files.walk(root)) {
+                for (Path f : walk.filter(Files::isRegularFile).toList()) {
+                    if (ShareExposeFilter.shouldExposeFromFolder(root, f)
+                            && ShareRegistry.isVideoFileName(f.getFileName().toString())) {
+                        videos++;
+                    }
+                }
+            }
+            return videos;
+        } catch (IOException ex) {
+            return 0;
         }
     }
 
@@ -421,8 +484,13 @@ public class SharingService implements CloudflaredListener, FfmpegDownloadListen
 
     @Override
     public void onError(String message, boolean retryable) {
+        onError(message, retryable, cloudflaredManager.lastFailure());
+    }
+
+    @Override
+    public void onError(String message, boolean retryable, DownloadFailureDetails details) {
         for (SharingUiListener l : listeners) {
-            l.onTunnelError(message, retryable);
+            l.onTunnelError(message, retryable, details);
         }
     }
 }

@@ -9,4 +9,8 @@ public interface CloudflaredListener {
     void onStateChanged(CloudflaredManager.State state, String detail);
 
     void onError(String message, boolean retryable);
+
+    default void onError(String message, boolean retryable, com.solocrew.crewcast.net.DownloadFailureDetails details) {
+        onError(message, retryable);
+    }
 }

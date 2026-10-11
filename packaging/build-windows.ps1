@@ -150,7 +150,7 @@ try {
 } finally {
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 }
-$mandatory = "java.desktop,java.logging,java.naming,java.management,java.sql,java.xml,jdk.unsupported,jdk.crypto.ec"
+$mandatory = "java.desktop,java.logging,java.naming,java.management,java.sql,java.xml,jdk.unsupported,jdk.crypto.ec,jdk.crypto.mscapi"
 $allModules = ($jdepsOut + "," + $mandatory).Split(",") | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Sort-Object -Unique
 $moduleList = $allModules -join ","
 Write-Host "    modules: $moduleList"

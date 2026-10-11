@@ -17,6 +17,7 @@ import com.solocrew.crewcast.desktop.ui.StyledButton;
 import com.solocrew.crewcast.desktop.ui.ToggleSwitch;
 import com.solocrew.crewcast.desktop.ui.UrlField;
 import com.solocrew.crewcast.desktop.ui.ViewportWidthPanel;
+import com.solocrew.crewcast.net.DownloadFailureDetails;
 import com.solocrew.crewcast.facade.ShareListItem;
 import com.solocrew.crewcast.facade.SharingLinks;
 import com.solocrew.crewcast.facade.SharingService;
@@ -127,6 +128,8 @@ public class MainFrame extends JFrame implements SharingUiListener {
     private final JLabel statusSharing = new JLabel("Sharing is off");
     private final JLabel statusViewers = new JLabel("0 people watching · tunnel idle");
     private final StyledButton sharingButton = new StyledButton("Start sharing");
+    private final JLabel folderShareNotice = new JLabel(
+            "<html><div style='max-width:240px;line-height:1.4'>Shared folders expose all non-hidden files to anyone with your link.</div></html>");
 
     private final UrlField publicLinkField = new UrlField();
     private final UrlField wifiLinkField = new UrlField();
@@ -148,6 +151,8 @@ public class MainFrame extends JFrame implements SharingUiListener {
     private boolean qrShowsPublic = true;
     private String lastTunnelError;
     private boolean lastTunnelRetryable;
+    private com.solocrew.crewcast.net.DownloadFailureDetails lastTunnelFailureDetails;
+    private StyledButton tunnelCopyDetailsButton;
 
     public MainFrame() {
         super("Crewcast");
@@ -361,7 +366,7 @@ public class MainFrame extends JFrame implements SharingUiListener {
         removeAllSharesBtn.addActionListener(e -> confirmRemoveAllShares());
 
         ElideLabel shareTitleElide = new ElideLabel();
-        shareTitleElide.setFullText("Shared videos");
+        shareTitleElide.setFullText("Shared items");
         shareTitleElide.setFont(Fonts.ui(700, 15));
         shareTitleElide.setForeground(CrewcastTheme.TEXT);
 
@@ -400,7 +405,7 @@ public class MainFrame extends JFrame implements SharingUiListener {
         iconTile.setPreferredSize(new Dimension(52, 52));
         iconTile.add(new JLabel(Icons.of("folder", 26, CrewcastTheme.LINK)), "align center");
 
-        JLabel emptyTitle = new JLabel("Drop a folder or videos here", JLabel.CENTER);
+        JLabel emptyTitle = new JLabel("Drop folders or files here", JLabel.CENTER);
         emptyTitle.setFont(Fonts.ui(700, 14));
         emptyTitle.setForeground(CrewcastTheme.TEXT);
         JLabel emptyHint = new JLabel(
@@ -522,10 +527,15 @@ public class MainFrame extends JFrame implements SharingUiListener {
 
         sharingButton.addActionListener(e -> toggleSharing());
 
-        JPanel text = new JPanel(new MigLayout("ins 0, gap 0", "[grow,fill]", "[]3[]"));
+        folderShareNotice.setFont(Fonts.ui(500, 12f));
+        folderShareNotice.setForeground(CrewcastTheme.MUTED);
+        folderShareNotice.setVisible(false);
+
+        JPanel text = new JPanel(new MigLayout("ins 0, gap 0", "[grow,fill]", "[]3[]3[]"));
         text.setOpaque(false);
         text.add(statusSharing, "growx, wrap");
-        text.add(statusViewers, "growx");
+        text.add(statusViewers, "growx, wrap");
+        text.add(folderShareNotice, "growx");
 
         card.add(statusCardDot, "aligny center");
         card.add(text, "growx, wmin 0");
@@ -568,10 +578,16 @@ public class MainFrame extends JFrame implements SharingUiListener {
                 sharingService.retryTunnel();
             }
         });
-        tunnelErrRow = new JPanel(new MigLayout("ins 0, gap 8, fillx", "[grow,fill][pref!]", "[]"));
+        tunnelCopyDetailsButton = new StyledButton("Copy details");
+        tunnelCopyDetailsButton.setVariant(StyledButton.Variant.GHOST);
+        tunnelCopyDetailsButton.setVisible(false);
+        tunnelCopyDetailsButton.packToContent();
+        tunnelCopyDetailsButton.addActionListener(e -> copyTunnelFailureDetails());
+        tunnelErrRow = new JPanel(new MigLayout("ins 0, gap 8, fillx", "[grow,fill][pref!][pref!]", "[]"));
         tunnelErrRow.setOpaque(false);
         tunnelErrRow.setVisible(false);
         tunnelErrRow.add(tunnelErrorLabel, "growx, wmin 0");
+        tunnelErrRow.add(tunnelCopyDetailsButton, "aligny center, shrink 0");
         tunnelErrRow.add(tunnelRetryButton, "aligny center, shrink 0");
         card.add(tunnelErrRow, "growx");
         return card;
@@ -916,6 +932,8 @@ public class MainFrame extends JFrame implements SharingUiListener {
         updateShareHeader();
         updateSharingButtonState();
         updateRightPanelMode();
+        boolean hasFolder = entries.stream().anyMatch(i -> i.entry().getKind() == ShareEntry.Kind.FOLDER);
+        folderShareNotice.setVisible(hasFolder);
     }
 
     private JPanel buildShareRow(ShareListItem item) {
@@ -1148,6 +1166,16 @@ public class MainFrame extends JFrame implements SharingUiListener {
         }
         tunnelErrorLabel.setText(tunnelErr ? lastTunnelError : "");
         tunnelRetryButton.setVisible(tunnelErr && lastTunnelRetryable);
+        tunnelCopyDetailsButton.setVisible(tunnelErr && lastTunnelFailureDetails != null);
+    }
+
+    private void copyTunnelFailureDetails() {
+        if (lastTunnelFailureDetails == null) {
+            return;
+        }
+        java.awt.Toolkit.getDefaultToolkit()
+                .getSystemClipboard()
+                .setContents(new java.awt.datatransfer.StringSelection(lastTunnelFailureDetails.copyText()), null);
     }
 
     private String tunnelStateLabel() {
@@ -1299,7 +1327,10 @@ public class MainFrame extends JFrame implements SharingUiListener {
     private void chooseFiles() {
         JFileChooser chooser = new JFileChooser();
         chooser.setMultiSelectionEnabled(true);
-        chooser.setFileFilter(new FileNameExtensionFilter("Video files", "mp4", "mkv", "mov", "webm", "m4v"));
+        chooser.setAcceptAllFileFilterUsed(true);
+        chooser.addChoosableFileFilter(new FileNameExtensionFilter("All files", "*"));
+        chooser.addChoosableFileFilter(new FileNameExtensionFilter("Video files", "mp4", "mkv", "mov", "webm", "m4v"));
+        chooser.setFileFilter(chooser.getChoosableFileFilters()[0]);
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             for (File f : chooser.getSelectedFiles()) {
                 addSharePath(f.toPath(), ShareEntry.Kind.FILE);
@@ -1340,7 +1371,7 @@ public class MainFrame extends JFrame implements SharingUiListener {
                     for (File f : files) {
                         if (f.isDirectory()) {
                             addSharePath(f.toPath(), ShareEntry.Kind.FOLDER);
-                        } else if (sharingService != null && sharingService.isSupportedVideoFileName(f.getName())) {
+                        } else if (f.isFile()) {
                             addSharePath(f.toPath(), ShareEntry.Kind.FILE);
                         }
                     }
@@ -1525,11 +1556,8 @@ public class MainFrame extends JFrame implements SharingUiListener {
                 String detail = message != null && !message.isBlank()
                         ? message
                         : "Download failed. Check your network connection and try again.";
-                javax.swing.JOptionPane.showMessageDialog(
-                        this,
-                        detail,
-                        "Could not download ffmpeg",
-                        javax.swing.JOptionPane.ERROR_MESSAGE);
+                DownloadFailureDetails failure = sharingService.lastFfmpegDownloadFailure();
+                DownloadErrorDialog.show(this, "Could not download ffmpeg", detail, failure);
             }
             updateFixAudioMutedHint();
         });
@@ -1540,6 +1568,7 @@ public class MainFrame extends JFrame implements SharingUiListener {
         SwingUtilities.invokeLater(() -> {
             downloadBanner.setVisible(false);
             lastTunnelError = null;
+            lastTunnelFailureDetails = null;
             refreshDynamicUi();
         });
     }
@@ -1551,9 +1580,15 @@ public class MainFrame extends JFrame implements SharingUiListener {
 
     @Override
     public void onTunnelError(String message, boolean retryable) {
+        onTunnelError(message, retryable, sharingService != null ? sharingService.lastTunnelFailure() : null);
+    }
+
+    @Override
+    public void onTunnelError(String message, boolean retryable, com.solocrew.crewcast.net.DownloadFailureDetails details) {
         SwingUtilities.invokeLater(() -> {
             lastTunnelError = message;
             lastTunnelRetryable = retryable;
+            lastTunnelFailureDetails = details;
             refreshDynamicUi();
         });
     }

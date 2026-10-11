@@ -153,9 +153,13 @@ public class VideoController {
         }
 
         ProbedMedia media = audioFixService.probe(path);
+        if (media.audioTracks().isEmpty()) {
+            return streamFile(path, rangeHeader);
+        }
+
         int audioIndex = audio != null ? audio : audioFixService.defaultAudioIndex(media);
         if (audioIndex < 0 || audioIndex >= media.audioTracks().size()) {
-            audioIndex = 0;
+            audioIndex = media.audioTracks().getFirst().audioIndex();
         }
 
         AudioFixService.ServeResult serve = audioFixService.resolvePlayback(path, audioIndex);

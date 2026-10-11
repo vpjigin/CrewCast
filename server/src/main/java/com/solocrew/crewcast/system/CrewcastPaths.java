@@ -30,4 +30,12 @@ public final class CrewcastPaths {
     public static Path binDir() {
         return home().resolve("bin");
     }
+
+    public static Path logsDir() {
+        return home().resolve("logs");
+    }
+
+    public static Path logFile() {
+        return logsDir().resolve("crewcast.log");
+    }
 }

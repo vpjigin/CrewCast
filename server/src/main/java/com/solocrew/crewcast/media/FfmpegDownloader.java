@@ -5,8 +5,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.solocrew.crewcast.settings.AppSettings;
 import com.solocrew.crewcast.settings.FfmpegDownloadConsent;
 import com.solocrew.crewcast.settings.SettingsStore;
+import com.solocrew.crewcast.archive.SafeArchive;
 import com.solocrew.crewcast.system.CrewcastPaths;
 import com.solocrew.crewcast.system.CrewcastWriteGuard;
+import com.solocrew.crewcast.net.DownloadErrors;
+import com.solocrew.crewcast.net.DownloadFailureDetails;
+import com.solocrew.crewcast.net.ResilientHttpFetcher;
 import com.solocrew.crewcast.tunnel.CloudflaredPlatform;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,9 +18,7 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.URI;
-import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
@@ -35,9 +37,6 @@ import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
-
 @Component
 public class FfmpegDownloader {
 
@@ -57,9 +56,9 @@ public class FfmpegDownloader {
     private final ObjectMapper mapper = new ObjectMapper();
     private final List<FfmpegDownloadListener> listeners = new CopyOnWriteArrayList<>();
     private volatile boolean downloadInProgress;
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .followRedirects(HttpClient.Redirect.NORMAL)
-            .build();
+    private volatile DownloadFailureDetails lastFailure;
+    private volatile String lastAttemptedUrl;
+    private final ResilientHttpFetcher http = new ResilientHttpFetcher(FfmpegDownloader.class.getName());
 
     public FfmpegDownloader(SettingsStore settingsStore) {
         this.settingsStore = settingsStore;
@@ -75,6 +74,10 @@ public class FfmpegDownloader {
 
     public boolean isDownloadInProgress() {
         return downloadInProgress;
+    }
+
+    public DownloadFailureDetails lastFailure() {
+        return lastFailure;
     }
 
     public FfmpegDownloadAssets.Plan planForCurrentHost() {
@@ -108,6 +111,7 @@ public class FfmpegDownloader {
             return;
         }
         downloadInProgress = true;
+        lastFailure = null;
         try {
             FfmpegDownloadAssets.Plan plan = planForCurrentHost();
             Path binDir = CrewcastPaths.binDir();
@@ -127,6 +131,16 @@ public class FfmpegDownloader {
             verifyCli(ffprobeDest);
             log.info("ffmpeg download: installed {} and {}", ffmpegDest, ffprobeDest);
             notifyFinished(true, "ffmpeg ready");
+        } catch (Exception e) {
+            log.error("ffmpeg download failed", e);
+            lastFailure = DownloadErrors.details(e, lastAttemptedUrl != null ? lastAttemptedUrl : "");
+            if (e instanceof IOException) {
+                throw (IOException) e;
+            }
+            if (e instanceof InterruptedException) {
+                throw (InterruptedException) e;
+            }
+            throw new IOException(DownloadErrors.plainReason(e, lastAttemptedUrl), e);
         } finally {
             downloadInProgress = false;
         }
@@ -181,28 +195,34 @@ public class FfmpegDownloader {
         }
         log.info("ffmpeg download: BtbN release {} asset {} size {} sha256={}", tag, assetName, size, expectedSha);
         assertAllowedUrl(downloadUrl);
-        Path tmpArchive = binDir.resolve(assetName + ".download");
-        Files.deleteIfExists(tmpArchive);
-        long bytes = downloadFile(downloadUrl, tmpArchive, size, "Downloading ffmpeg…");
-        log.info("ffmpeg download: downloaded {} bytes", bytes);
-        verifySha256(expectedSha, tmpArchive);
-        log.info("ffmpeg download: SHA-256 verified for {}", assetName);
-        Path extractDir = Files.createTempDirectory(binDir, "ffmpeg-extract-");
+        Path archive = binDir.resolve(assetName);
         try {
-            if (assetName.endsWith(".zip")) {
-                unzip(tmpArchive, extractDir);
-            } else if (assetName.endsWith(".tar.xz")) {
-                extractTarXz(tmpArchive, extractDir);
-            } else {
-                throw new IOException("Unsupported archive: " + assetName);
+            long bytes = downloadFile(downloadUrl, archive, size, "Downloading ffmpeg…");
+            log.info("ffmpeg download: downloaded {} bytes", bytes);
+            verifySha256(expectedSha, archive);
+            log.info("ffmpeg download: SHA-256 verified for {}", assetName);
+            Path extractDir = Files.createTempDirectory(binDir, "ffmpeg-extract-");
+            try {
+                if (assetName.endsWith(".zip")) {
+                    unzip(archive, extractDir);
+                } else if (assetName.endsWith(".tar.xz")) {
+                    extractTarXz(archive, extractDir);
+                } else {
+                    throw new IOException("Unsupported archive: " + assetName);
+                }
+                Path ffmpeg = findBinary(extractDir, "ffmpeg");
+                Path ffprobe = findBinary(extractDir, "ffprobe");
+                installBinary(ffmpeg, ffmpegLocalPath());
+                installBinary(ffprobe, ffprobeLocalPath());
+            } finally {
+                deleteRecursive(extractDir);
             }
-            Path ffmpeg = findBinary(extractDir, "ffmpeg");
-            Path ffprobe = findBinary(extractDir, "ffprobe");
-            installBinary(ffmpeg, ffmpegLocalPath());
-            installBinary(ffprobe, ffprobeLocalPath());
+        } catch (Exception e) {
+            ResilientHttpFetcher.deleteQuietly(archive);
+            ResilientHttpFetcher.deleteQuietly(ResilientHttpFetcher.partPath(archive));
+            throw e;
         } finally {
-            Files.deleteIfExists(tmpArchive);
-            deleteRecursive(extractDir);
+            ResilientHttpFetcher.deleteQuietly(archive);
         }
     }
 
@@ -228,20 +248,26 @@ public class FfmpegDownloader {
         assertAllowedUrl(shaUrl);
         String expectedSha = fetchSha256Sidecar(shaUrl, binary + ".zip");
         log.info("ffmpeg download: macOS {} from {} sha256={}", binary, downloadUrl, expectedSha);
-        Path tmp = binDir.resolve(binary + ".zip.download");
-        Files.deleteIfExists(tmp);
-        long bytes = downloadFile(downloadUrl, tmp, 0, "Downloading " + binary + "…");
-        log.info("ffmpeg download: downloaded {} bytes for {}", bytes, binary);
-        verifySha256(expectedSha, tmp);
-        log.info("ffmpeg download: SHA-256 verified for {}", binary);
-        Path extractDir = Files.createTempDirectory(binDir, "ffmpeg-extract-");
+        Path zipFile = binDir.resolve(binary + ".zip");
         try {
-            unzipSingleBinary(tmp, extractDir, binary);
-            Path found = findBinary(extractDir, binary);
-            installBinary(found, dest);
+            long bytes = downloadFile(downloadUrl, zipFile, 0, "Downloading " + binary + "…");
+            log.info("ffmpeg download: downloaded {} bytes for {}", bytes, binary);
+            verifySha256(expectedSha, zipFile);
+            log.info("ffmpeg download: SHA-256 verified for {}", binary);
+            Path extractDir = Files.createTempDirectory(binDir, "ffmpeg-extract-");
+            try {
+                unzipSingleBinary(zipFile, extractDir, binary);
+                Path found = findBinary(extractDir, binary);
+                installBinary(found, dest);
+            } finally {
+                deleteRecursive(extractDir);
+            }
+        } catch (Exception e) {
+            ResilientHttpFetcher.deleteQuietly(zipFile);
+            ResilientHttpFetcher.deleteQuietly(ResilientHttpFetcher.partPath(zipFile));
+            throw e;
         } finally {
-            Files.deleteIfExists(tmp);
-            deleteRecursive(extractDir);
+            ResilientHttpFetcher.deleteQuietly(zipFile);
         }
     }
 
@@ -291,8 +317,7 @@ public class FfmpegDownloader {
             if ("checksums.sha256".equals(asset.get("name").asText())) {
                 String url = asset.get("browser_download_url").asText();
                 assertAllowedUrl(url);
-                HttpRequest req = HttpRequest.newBuilder(URI.create(url)).GET().build();
-                HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+                HttpResponse<String> resp = http.getString(url);
                 if (resp.statusCode() >= 400) {
                     throw new IOException("Failed to fetch checksums.sha256: HTTP " + resp.statusCode());
                 }
@@ -308,8 +333,7 @@ public class FfmpegDownloader {
     }
 
     private String fetchSha256Sidecar(String shaUrl, String filename) throws IOException, InterruptedException {
-        HttpRequest req = HttpRequest.newBuilder(URI.create(shaUrl)).GET().build();
-        HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> resp = http.getString(shaUrl);
         if (resp.statusCode() >= 400) {
             throw new IOException("Failed to fetch checksum: HTTP " + resp.statusCode());
         }
@@ -322,7 +346,7 @@ public class FfmpegDownloader {
                 .header("Accept", "application/vnd.github+json")
                 .GET()
                 .build();
-        HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> resp = http.client().send(req, HttpResponse.BodyHandlers.ofString());
         if (resp.statusCode() >= 400) {
             throw new IOException("GitHub API failed: HTTP " + resp.statusCode());
         }
@@ -330,45 +354,30 @@ public class FfmpegDownloader {
     }
 
     private URI resolveRedirect(String url) throws IOException, InterruptedException {
-        HttpRequest req = HttpRequest.newBuilder(URI.create(url)).GET().build();
-        HttpResponse<Void> resp = httpClient.send(req, HttpResponse.BodyHandlers.discarding());
-        if (resp.statusCode() >= 400) {
-            throw new IOException("Redirect failed: HTTP " + resp.statusCode());
-        }
-        return resp.uri();
+        return http.resolveRedirect(url);
     }
 
     private long downloadFile(String url, Path dest, long expectedSize, String label)
             throws IOException, InterruptedException {
         assertAllowedUrl(url);
-        HttpRequest req = HttpRequest.newBuilder(URI.create(url)).GET().build();
-        HttpResponse<InputStream> response = httpClient.send(req, HttpResponse.BodyHandlers.ofInputStream());
-        if (response.statusCode() >= 400) {
-            throw new IOException("Download failed: HTTP " + response.statusCode());
-        }
-        long total = response.headers().firstValueAsLong("Content-Length").orElse(expectedSize);
-        long done = 0;
-        try (InputStream in = response.body();
-             OutputStream out = Files.newOutputStream(dest)) {
-            byte[] buf = new byte[8192];
-            int read;
-            while ((read = in.read(buf)) >= 0) {
-                out.write(buf, 0, read);
-                done += read;
-                if (total > 0) {
-                    int pct = (int) Math.min(100, (done * 100) / total);
-                    notifyProgress(pct, label + " " + pct + "%");
-                }
-            }
-        }
-        notifyProgress(100, label);
-        return done;
+        lastAttemptedUrl = url;
+        return http.downloadToFile(
+                url,
+                dest,
+                expectedSize,
+                pct -> {
+                    if (pct < 100) {
+                        notifyProgress(pct, label + " " + pct + "%");
+                    } else {
+                        notifyProgress(100, label);
+                    }
+                });
     }
 
     private static void verifySha256(String expectedHex, Path file) throws IOException {
         String actual = sha256Hex(file);
         if (!expectedHex.equalsIgnoreCase(actual)) {
-            throw new IOException("ffmpeg download failed SHA-256 verification");
+            throw new IOException("Checksum mismatch (expected " + expectedHex + ", got " + actual + ")");
         }
     }
 
@@ -393,38 +402,12 @@ public class FfmpegDownloader {
         }
     }
 
-    private static void extractTarXz(Path archive, Path destDir) throws IOException, InterruptedException {
-        Files.createDirectories(destDir);
-        Process p = new ProcessBuilder("tar", "-xJf", archive.toAbsolutePath().toString(), "-C", destDir.toString())
-                .redirectErrorStream(true)
-                .start();
-        String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        if (!p.waitFor(120, java.util.concurrent.TimeUnit.SECONDS)) {
-            p.destroyForcibly();
-            throw new IOException("tar extract timed out");
-        }
-        if (p.exitValue() != 0) {
-            throw new IOException("tar extract failed: " + out);
-        }
+    private static void extractTarXz(Path archive, Path destDir) throws IOException {
+        SafeArchive.extractTarXz(archive, destDir);
     }
 
     private static void unzip(Path zip, Path destDir) throws IOException {
-        Files.createDirectories(destDir);
-        try (ZipInputStream zis = new ZipInputStream(Files.newInputStream(zip))) {
-            ZipEntry entry;
-            while ((entry = zis.getNextEntry()) != null) {
-                if (entry.isDirectory()) {
-                    Files.createDirectories(destDir.resolve(entry.getName()));
-                    continue;
-                }
-                Path out = destDir.resolve(entry.getName()).normalize();
-                if (!out.startsWith(destDir)) {
-                    throw new IOException("Zip path traversal blocked");
-                }
-                Files.createDirectories(out.getParent());
-                Files.copy(zis, out);
-            }
-        }
+        SafeArchive.extractZip(zip, destDir);
     }
 
     private static void unzipSingleBinary(Path zip, Path destDir, String binaryName) throws IOException {
