@@ -2,7 +2,11 @@
 
 Share videos from your computer to any device, on your Wi‑Fi or over the internet, with no upload, no account and no cloud storage.
 
-![Crewcast](docs/images/screenshot.png)
+![Crewcast sharing a folder](docs/images/sharing-started.png)
+
+| Start screen | Dashboard |
+|---|---|
+| ![Start screen](docs/images/initial-screen.png) | ![Dashboard](docs/images/dashboard.png) |
 
 **Crewcast** (by Solocrew) is a self-hosted Spring Boot app with a dark-themed desktop UI and a touch-friendly web player. Your files stay on your machine; viewers stream them while sharing is on.
 
