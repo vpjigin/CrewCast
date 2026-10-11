@@ -104,9 +104,12 @@ class FileListBrowserTest extends CrewcastSpringTestBase {
                     .setExtraHTTPHeaders(Map.of("Cf-Connecting-Ip", "203.0.113.10")));
             Page page = ctx.newPage();
             page.navigate(base + "/?t=" + token);
-            page.waitForSelector(".file-card");
+            page.waitForSelector(".folder-card");
+            assertEquals(0, page.locator(".file-card:not(.folder-card)").count());
 
-            page.locator(".file-card").filter(new Locator.FilterOptions().setHasText("Sample.mp4")).click();
+            page.locator(".folder-card").first().click();
+            page.waitForSelector(".file-card:not(.folder-card)");
+            page.locator(".file-card:not(.folder-card)").filter(new Locator.FilterOptions().setHasText("Sample.mp4")).click();
             page.locator("#modal").waitFor(new Locator.WaitForOptions().setState(WaitForSelectorState.VISIBLE));
             page.locator("#btn-view").click();
             page.waitForURL("**/watch/" + videoId + "**");
@@ -114,17 +117,17 @@ class FileListBrowserTest extends CrewcastSpringTestBase {
             assertTrue(page.url().contains("t="));
 
             page.locator("#back-to-files").click();
-            page.waitForURL("**/?t=**");
-            assertTrue(page.locator(".file-card").first().isVisible());
+            page.waitForFunction("() => new URLSearchParams(location.search).has('folder')");
+            page.locator(".file-card:not(.folder-card)").filter(new Locator.FilterOptions().setHasText("Sample.mp4")).waitFor();
 
-            page.locator(".file-card").filter(new Locator.FilterOptions().setHasText("photo.jpg")).click();
+            page.locator(".file-card:not(.folder-card)").filter(new Locator.FilterOptions().setHasText("photo.jpg")).click();
             page.locator("#modal").waitFor(new Locator.WaitForOptions().setState(WaitForSelectorState.VISIBLE));
             page.locator("#btn-view").click();
             page.locator("#image-viewer").waitFor(new Locator.WaitForOptions().setState(WaitForSelectorState.VISIBLE));
             page.keyboard().press("Escape");
             page.locator("#image-viewer").waitFor(new Locator.WaitForOptions().setState(WaitForSelectorState.HIDDEN));
 
-            page.locator(".file-card").filter(new Locator.FilterOptions().setHasText("doc.pdf")).click();
+            page.locator(".file-card:not(.folder-card)").filter(new Locator.FilterOptions().setHasText("doc.pdf")).click();
             page.locator("#modal").waitFor(new Locator.WaitForOptions().setState(WaitForSelectorState.VISIBLE));
             assertEquals(0, page.locator("#modal").getByRole(AriaRole.BUTTON,
                     new Locator.GetByRoleOptions().setName("View")).count());
@@ -132,12 +135,64 @@ class FileListBrowserTest extends CrewcastSpringTestBase {
             page.keyboard().press("Escape");
             page.locator("#modal").waitFor(new Locator.WaitForOptions().setState(WaitForSelectorState.HIDDEN));
 
-            page.locator(".file-card").filter(new Locator.FilterOptions().setHasText("archive.zip")).click();
+            page.locator(".file-card:not(.folder-card)").filter(new Locator.FilterOptions().setHasText("archive.zip")).click();
             page.locator("#modal").waitFor(new Locator.WaitForOptions().setState(WaitForSelectorState.VISIBLE));
             assertEquals(0, page.locator("#modal").getByRole(AriaRole.BUTTON,
                     new Locator.GetByRoleOptions().setName("View")).count());
             page.locator("#modal-close").click();
             page.locator("#modal").waitFor(new Locator.WaitForOptions().setState(WaitForSelectorState.HIDDEN));
+
+            browser.close();
+        }
+    }
+
+    @Test
+    void folderBrowseBreadcrumbAndBack() throws Exception {
+        Path dir = Files.createTempDirectory("crewcast-nest-");
+        dir.toFile().deleteOnExit();
+        Path sub = Files.createDirectories(dir.resolve("sub-folder"));
+        Files.copy(h264Fixture, sub.resolve("nested.mp4"), StandardCopyOption.REPLACE_EXISTING);
+        Files.writeString(dir.resolve("root.txt"), "root");
+        shareRegistry.addFolder(dir);
+        String token = accessSession.getToken();
+        String base = "http://127.0.0.1:" + port;
+
+        try (Playwright pw = Playwright.create()) {
+            Browser browser = launchBrowser(pw);
+            BrowserContext ctx = browser.newContext(new Browser.NewContextOptions()
+                    .setExtraHTTPHeaders(Map.of("Cf-Connecting-Ip", "203.0.113.10")));
+            Page page = ctx.newPage();
+            page.navigate(base + "/?t=" + token);
+            page.waitForSelector(".folder-card");
+            assertEquals(0, page.locator(".file-card:not(.folder-card)").count());
+
+            page.locator(".folder-card").first().click();
+            page.waitForFunction("() => new URLSearchParams(location.search).has('folder')");
+            page.locator(".folder-card").filter(new Locator.FilterOptions().setHasText("sub-folder")).waitFor();
+
+            page.locator(".folder-card").filter(new Locator.FilterOptions().setHasText("sub-folder")).click();
+            page.locator(".file-card:not(.folder-card)").filter(new Locator.FilterOptions().setHasText("nested.mp4")).waitFor();
+            assertTrue(page.locator(".breadcrumb").getByText("sub-folder").isVisible());
+
+            page.locator(".breadcrumb-link").filter(new Locator.FilterOptions().setHasText("Shared")).click();
+            page.waitForFunction("() => !new URLSearchParams(location.search).has('folder')");
+            page.locator(".folder-card").first().waitFor();
+
+            page.goBack();
+            page.waitForFunction("() => new URLSearchParams(location.search).has('folder')");
+            assertTrue(page.locator(".file-card:not(.folder-card)").filter(new Locator.FilterOptions().setHasText("nested.mp4")).isVisible());
+
+            page.locator(".file-card:not(.folder-card)").filter(new Locator.FilterOptions().setHasText("nested.mp4")).click();
+            page.locator("#modal").waitFor(new Locator.WaitForOptions().setState(WaitForSelectorState.VISIBLE));
+            page.locator("#btn-view").click();
+            page.waitForURL("**/watch/**");
+            assertTrue(page.url().contains("t="));
+            assertTrue(page.url().contains("folder="));
+
+            page.locator("#back-to-files").click();
+            page.waitForFunction("() => new URLSearchParams(location.search).has('folder')");
+            page.locator(".file-card:not(.folder-card)").filter(new Locator.FilterOptions().setHasText("nested.mp4")).waitFor();
+            assertTrue(page.locator(".breadcrumb").getByText("sub-folder").isVisible());
 
             browser.close();
         }

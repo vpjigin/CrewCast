@@ -1,5 +1,6 @@
 (function () {
   var THUMB_MAX_BYTES = 2 * 1024 * 1024;
+  var CHUNK_SIZE = 200;
   var GRADIENTS = [
     'linear-gradient(135deg,#2B3A67,#6A4C93)',
     'linear-gradient(160deg,#F2994A,#BB4E75 55%,#2D2A55)',
@@ -7,7 +8,9 @@
     'linear-gradient(160deg,#4B6CB7,#182848)'
   ];
 
+  var folders = [];
   var files = [];
+  var visibleLimit = CHUNK_SIZE;
   var selected = null;
   var lastFocus = null;
   var imageFiles = [];
@@ -18,6 +21,10 @@
   var headerCount = document.getElementById('header-count');
   var shareTitle = document.getElementById('share-title');
   var statusMessage = document.getElementById('status-message');
+  var browseNav = document.getElementById('browse-nav');
+  var btnBack = document.getElementById('btn-back');
+  var breadcrumbEl = document.getElementById('breadcrumb');
+  var btnShowMore = document.getElementById('btn-show-more');
   var modal = document.getElementById('modal');
   var modalTitle = document.getElementById('modal-title');
   var modalSub = document.getElementById('modal-sub');
@@ -43,10 +50,34 @@
     return new URLSearchParams(window.location.search).get('t');
   }
 
+  function currentFolderId() {
+    return new URLSearchParams(window.location.search).get('folder') || '';
+  }
+
   function withToken(path) {
     var t = pageToken();
     if (!t) return path;
     return path + (path.indexOf('?') >= 0 ? '&' : '?') + 't=' + encodeURIComponent(t);
+  }
+
+  function browseApiUrl(folderId) {
+    var q = [];
+    var t = pageToken();
+    if (t) q.push('t=' + encodeURIComponent(t));
+    if (folderId) q.push('folder=' + encodeURIComponent(folderId));
+    return '/api/browse' + (q.length ? '?' + q.join('&') : '');
+  }
+
+  function navigateToFolder(folderId, pushHistory) {
+    var p = new URLSearchParams(window.location.search);
+    var t = pageToken();
+    if (folderId) p.set('folder', folderId);
+    else p.delete('folder');
+    if (t) p.set('t', t);
+    var url = '/?' + p.toString();
+    if (pushHistory) history.pushState({ folder: folderId || '' }, '', url);
+    else history.replaceState({ folder: folderId || '' }, '', url);
+    loadBrowse();
   }
 
   function formatSize(bytes) {
@@ -95,6 +126,15 @@
     return f.viewable && (isVideo(f) || isImage(f));
   }
 
+  function watchUrl(id) {
+    var q = [];
+    var t = pageToken();
+    if (t) q.push('t=' + encodeURIComponent(t));
+    var folder = currentFolderId();
+    if (folder) q.push('folder=' + encodeURIComponent(folder));
+    return '/watch/' + encodeURIComponent(id) + (q.length ? '?' + q.join('&') : '');
+  }
+
   function fileUrl(id, download) {
     var url = '/file/' + encodeURIComponent(id);
     var q = [];
@@ -109,58 +149,161 @@
     imageFiles = files.filter(isImage);
   }
 
+  function folderIconSvg() {
+    return '<svg width="40" height="40" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="#9AA3B2" stroke-width="1.6" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"></path></svg>';
+  }
+
+  function renderBreadcrumb(items) {
+    breadcrumbEl.innerHTML = '';
+    if (!items || !items.length || (items.length === 1 && !currentFolderId())) {
+      browseNav.hidden = true;
+      return;
+    }
+    browseNav.hidden = false;
+    var inFolder = currentFolderId().length > 0;
+    btnBack.hidden = !inFolder;
+    items.forEach(function (item, idx) {
+      var li = document.createElement('li');
+      li.className = 'breadcrumb-item';
+      if (idx > 0) {
+        var sep = document.createElement('span');
+        sep.className = 'breadcrumb-sep';
+        sep.setAttribute('aria-hidden', 'true');
+        sep.textContent = '›';
+        li.appendChild(sep);
+      }
+      if (idx === items.length - 1) {
+        var current = document.createElement('span');
+        current.className = 'breadcrumb-current';
+        current.textContent = item.name;
+        li.appendChild(current);
+      } else {
+        var link = document.createElement('button');
+        link.type = 'button';
+        link.className = 'breadcrumb-link';
+        link.textContent = item.name;
+        (function (id) {
+          link.addEventListener('click', function () {
+            navigateToFolder(id, true);
+          });
+        })(item.id || '');
+        li.appendChild(link);
+      }
+      breadcrumbEl.appendChild(li);
+    });
+  }
+
+  function createFolderCard(folder) {
+    var card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'file-card folder-card';
+    card.setAttribute('role', 'listitem');
+    card.setAttribute('aria-label', folder.name + ', ' + folder.itemCount + ' items');
+
+    var thumb = document.createElement('div');
+    thumb.className = 'file-thumb folder-thumb';
+    thumb.style.background = gradientFor(folder.name);
+    thumb.innerHTML = folderIconSvg();
+
+    var badge = document.createElement('div');
+    badge.className = 'file-kind-badge';
+    badge.textContent = 'Folder';
+    thumb.appendChild(badge);
+
+    var meta = document.createElement('div');
+    meta.className = 'file-meta';
+    var nameEl = document.createElement('div');
+    nameEl.className = 'file-name';
+    nameEl.textContent = folder.name;
+    var sizeEl = document.createElement('div');
+    sizeEl.className = 'file-size';
+    var n = folder.itemCount;
+    sizeEl.textContent = n + (n === 1 ? ' item' : ' items');
+    meta.appendChild(nameEl);
+    meta.appendChild(sizeEl);
+
+    card.appendChild(thumb);
+    card.appendChild(meta);
+    card.addEventListener('click', function () {
+      navigateToFolder(folder.id, true);
+    });
+    return card;
+  }
+
+  function createFileCard(f) {
+    var card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'file-card';
+    card.setAttribute('role', 'listitem');
+    card.setAttribute('aria-label', f.name + ', ' + f.kind);
+
+    var thumb = document.createElement('div');
+    thumb.className = 'file-thumb';
+    thumb.style.background = isImage(f) && f.sizeBytes <= THUMB_MAX_BYTES ? '#0B0D11' : gradientFor(f.name);
+    if (isImage(f) && f.sizeBytes <= THUMB_MAX_BYTES) {
+      var img = document.createElement('img');
+      img.src = withToken('/file/' + encodeURIComponent(f.id));
+      img.alt = '';
+      img.loading = 'lazy';
+      img.decoding = 'async';
+      thumb.appendChild(img);
+    } else if (isVideo(f)) {
+      var play = document.createElement('div');
+      play.className = 'file-play';
+      play.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="#FFFFFF"></path></svg>';
+      thumb.appendChild(play);
+    } else if (!isImage(f)) {
+      var ext = document.createElement('div');
+      ext.className = 'file-ext-label';
+      ext.textContent = f.ext;
+      thumb.appendChild(ext);
+    }
+
+    var badge = document.createElement('div');
+    badge.className = 'file-kind-badge';
+    badge.textContent = f.kind;
+    thumb.appendChild(badge);
+
+    var meta = document.createElement('div');
+    meta.className = 'file-meta';
+    var nameEl = document.createElement('div');
+    nameEl.className = 'file-name';
+    nameEl.textContent = f.name;
+    var sizeEl = document.createElement('div');
+    sizeEl.className = 'file-size';
+    sizeEl.textContent = formatSize(f.sizeBytes);
+    meta.appendChild(nameEl);
+    meta.appendChild(sizeEl);
+
+    card.appendChild(thumb);
+    card.appendChild(meta);
+    card.addEventListener('click', function () { openModal(f, card); });
+    return card;
+  }
+
   function renderGrid() {
     grid.innerHTML = '';
-    files.forEach(function (f) {
-      var card = document.createElement('button');
-      card.type = 'button';
-      card.className = 'file-card';
-      card.setAttribute('role', 'listitem');
-      card.setAttribute('aria-label', f.name + ', ' + f.kind);
-
-      var thumb = document.createElement('div');
-      thumb.className = 'file-thumb';
-      thumb.style.background = isImage(f) && f.sizeBytes <= THUMB_MAX_BYTES ? '#0B0D11' : gradientFor(f.name);
-      if (isImage(f) && f.sizeBytes <= THUMB_MAX_BYTES) {
-        var img = document.createElement('img');
-        img.src = withToken('/file/' + encodeURIComponent(f.id));
-        img.alt = '';
-        img.loading = 'lazy';
-        img.decoding = 'async';
-        thumb.appendChild(img);
-      } else if (isVideo(f)) {
-        var play = document.createElement('div');
-        play.className = 'file-play';
-        play.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="#FFFFFF"></path></svg>';
-        thumb.appendChild(play);
-      } else if (!isImage(f)) {
-        var ext = document.createElement('div');
-        ext.className = 'file-ext-label';
-        ext.textContent = f.ext;
-        thumb.appendChild(ext);
-      }
-
-      var badge = document.createElement('div');
-      badge.className = 'file-kind-badge';
-      badge.textContent = f.kind;
-      thumb.appendChild(badge);
-
-      var meta = document.createElement('div');
-      meta.className = 'file-meta';
-      var nameEl = document.createElement('div');
-      nameEl.className = 'file-name';
-      nameEl.textContent = f.name;
-      var sizeEl = document.createElement('div');
-      sizeEl.className = 'file-size';
-      sizeEl.textContent = formatSize(f.sizeBytes);
-      meta.appendChild(nameEl);
-      meta.appendChild(sizeEl);
-
-      card.appendChild(thumb);
-      card.appendChild(meta);
-      card.addEventListener('click', function () { openModal(f, card); });
-      grid.appendChild(card);
-    });
+    statusMessage.hidden = true;
+    var total = folders.length + files.length;
+    if (!total) {
+      statusMessage.hidden = false;
+      statusMessage.textContent = currentFolderId() ? 'This folder is empty' : 'No files shared yet';
+      statusMessage.className = 'empty-state';
+      btnShowMore.hidden = true;
+      rebuildImageList();
+      return;
+    }
+    var shown = 0;
+    var i;
+    for (i = 0; i < folders.length && shown < visibleLimit; i++) {
+      grid.appendChild(createFolderCard(folders[i]));
+      shown++;
+    }
+    for (i = 0; i < files.length && shown < visibleLimit; i++) {
+      grid.appendChild(createFileCard(files[i]));
+      shown++;
+    }
+    btnShowMore.hidden = shown >= total;
     rebuildImageList();
   }
 
@@ -252,7 +395,7 @@
   btnView.addEventListener('click', function () {
     if (!selected) return;
     if (isVideo(selected)) {
-      window.location.href = withToken('/watch/' + encodeURIComponent(selected.id));
+      window.location.href = watchUrl(selected.id);
       return;
     }
     if (isImage(selected)) {
@@ -260,6 +403,15 @@
       closeModal();
       openImageViewer(imgFile);
     }
+  });
+
+  btnBack.addEventListener('click', function () {
+    history.back();
+  });
+
+  btnShowMore.addEventListener('click', function () {
+    visibleLimit += CHUNK_SIZE;
+    renderGrid();
   });
 
   imageViewerClose.addEventListener('click', closeImageViewer);
@@ -298,26 +450,48 @@
     }
   });
 
-  fetch(withToken('/api/files'), { credentials: 'same-origin', cache: 'no-store' })
-    .then(function (r) {
-      if (!r.ok) throw new Error('load failed');
-      return r.json();
-    })
-    .then(function (data) {
-      files = data.files || [];
-      shareTitle.textContent = data.shareTitle || 'Shared files';
-      headerCount.textContent = (data.fileCount || files.length) + (files.length === 1 ? ' file shared' : ' files shared');
-      if (!files.length) {
+  window.addEventListener('popstate', function () {
+    loadBrowse();
+  });
+
+  function loadBrowse() {
+    visibleLimit = CHUNK_SIZE;
+    var folder = currentFolderId();
+    fetch(browseApiUrl(folder), { credentials: 'same-origin', cache: 'no-store' })
+      .then(function (r) {
+        if (r.status === 404) throw new Error('not found');
+        if (!r.ok) throw new Error('load failed');
+        return r.json();
+      })
+      .then(function (data) {
+        folders = data.folders || [];
+        files = data.files || [];
+        shareTitle.textContent = data.title || 'Shared';
+        if (data.headerSummary) {
+          headerCount.textContent = data.headerSummary;
+        } else {
+          headerCount.textContent = '';
+        }
+        renderBreadcrumb(data.breadcrumb || []);
+        renderGrid();
+      })
+      .catch(function (err) {
+        if (err && err.message === 'not found' && currentFolderId()) {
+          navigateToFolder('', true);
+          return;
+        }
+        folders = [];
+        files = [];
+        grid.innerHTML = '';
+        browseNav.hidden = true;
+        btnShowMore.hidden = true;
         statusMessage.hidden = false;
-        statusMessage.textContent = 'No files shared yet';
-        statusMessage.className = 'empty-state';
-        return;
-      }
-      renderGrid();
-    })
-    .catch(function () {
-      statusMessage.hidden = false;
-      statusMessage.textContent = 'Could not load shared files';
-      statusMessage.className = 'error-state';
-    });
+        statusMessage.textContent = err && err.message === 'not found'
+            ? 'Folder not found'
+            : 'Could not load shared files';
+        statusMessage.className = err && err.message === 'not found' ? 'empty-state' : 'error-state';
+      });
+  }
+
+  loadBrowse();
 })();

@@ -1,6 +1,7 @@
 package com.solocrew.crewcast;
 
 import com.solocrew.crewcast.share.FileKind;
+import com.solocrew.crewcast.share.ShareBrowseService;
 import com.solocrew.crewcast.share.ShareRegistry;
 import com.solocrew.crewcast.share.SharedFile;
 import com.solocrew.crewcast.web.ContentDispositionHelper;
@@ -23,9 +24,18 @@ import java.util.List;
 public class SharedFileController {
 
     private final ShareRegistry shareRegistry;
+    private final ShareBrowseService shareBrowseService;
 
-    public SharedFileController(ShareRegistry shareRegistry) {
+    public SharedFileController(ShareRegistry shareRegistry, ShareBrowseService shareBrowseService) {
         this.shareRegistry = shareRegistry;
+        this.shareBrowseService = shareBrowseService;
+    }
+
+    @GetMapping("/api/browse")
+    public ShareBrowseService.BrowseResponse browse(
+            @org.springframework.web.bind.annotation.RequestParam(name = "folder", required = false) String folder)
+            throws IOException {
+        return shareBrowseService.browse(folder);
     }
 
     @GetMapping("/api/files")

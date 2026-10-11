@@ -25,7 +25,12 @@
     <h1 id="share-title">Shared files</h1>
     <p class="hero-lead">Tap any file to open it. Photos and videos can be viewed here; everything else can be downloaded.</p>
   </div>
+  <nav id="browse-nav" class="browse-nav" hidden aria-label="Folder location">
+    <button type="button" class="btn-back" id="btn-back" hidden>Back</button>
+    <ol id="breadcrumb" class="breadcrumb"></ol>
+  </nav>
   <div id="file-grid" class="file-grid" role="list"></div>
+  <button type="button" class="btn btn-secondary show-more" id="btn-show-more" hidden>Show more</button>
   <p id="status-message" class="empty-state" hidden></p>
 </main>
 
