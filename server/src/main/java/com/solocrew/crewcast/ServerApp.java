@@ -22,9 +22,11 @@ public final class ServerApp {
         List<String> sharePaths = new ArrayList<>();
         Integer port = null;
         boolean noTunnel = false;
+        boolean downloadFfmpeg = false;
 
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
+                case "--download-ffmpeg" -> downloadFfmpeg = true;
                 case "--share" -> {
                     if (i + 1 < args.length) {
                         sharePaths.add(args[++i]);
@@ -53,6 +55,16 @@ public final class ServerApp {
                 .run();
 
         SharingService sharing = ctx.getBean(SharingService.class);
+        if (downloadFfmpeg) {
+            System.out.println("Downloading ffmpeg (consented via --download-ffmpeg)…");
+            sharing.downloadFfmpegBlocking();
+            if (!sharing.isFfmpegAvailable()) {
+                System.err.println("ffmpeg download failed.");
+                ctx.close();
+                System.exit(1);
+            }
+            System.out.println("ffmpeg installed under crewcast home bin/");
+        }
         if (noTunnel) {
             sharing.getSettings().setStartTunnelWhenSharingStarts(false);
             sharing.saveSettings(sharing.getSettings());

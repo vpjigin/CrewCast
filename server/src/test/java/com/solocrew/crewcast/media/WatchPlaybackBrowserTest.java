@@ -54,8 +54,12 @@ class WatchPlaybackBrowserTest extends CrewcastSpringTestBase {
     @DynamicPropertySource
     static void fixtures(DynamicPropertyRegistry registry) throws Exception {
         assumeTrue(AudioFixIntegrationTest.ffmpegAvailable(), "ffmpeg not on PATH");
-        hevcFixture = CoverArtFixture.create();
-        h264Fixture = H264Fixture.create();
+        if (hevcFixture == null) {
+            hevcFixture = MediaTestFixtures.coverArt();
+        }
+        if (h264Fixture == null) {
+            h264Fixture = MediaTestFixtures.h264();
+        }
     }
 
     @BeforeEach

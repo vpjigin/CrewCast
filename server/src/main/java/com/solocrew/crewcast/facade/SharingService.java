@@ -1,8 +1,13 @@
 package com.solocrew.crewcast.facade;
 
 import com.solocrew.crewcast.media.AudioFixService;
+import com.solocrew.crewcast.media.FfmpegDownloadAssets;
+import com.solocrew.crewcast.media.FfmpegDownloadListener;
+import com.solocrew.crewcast.media.FfmpegDownloader;
 import com.solocrew.crewcast.media.FfmpegManager;
+import com.solocrew.crewcast.media.VideoBrowserContainers;
 import com.solocrew.crewcast.media.SubtitleService;
+import com.solocrew.crewcast.settings.FfmpegDownloadConsent;
 import com.solocrew.crewcast.access.AccessSession;
 import com.solocrew.crewcast.access.SharingState;
 import com.solocrew.crewcast.settings.AppSettings;
@@ -29,7 +34,7 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 @Service
-public class SharingService implements CloudflaredListener {
+public class SharingService implements CloudflaredListener, FfmpegDownloadListener {
 
     private final ShareRegistry shareRegistry;
     private final SettingsStore settingsStore;
@@ -41,6 +46,7 @@ public class SharingService implements CloudflaredListener {
     private final ServerPortHolder portHolder;
     private final AudioFixService audioFixService;
     private final FfmpegManager ffmpegManager;
+    private final FfmpegDownloader ffmpegDownloader;
     private final SubtitleService subtitleService;
 
     private final List<SharingUiListener> listeners = new CopyOnWriteArrayList<>();
@@ -56,6 +62,7 @@ public class SharingService implements CloudflaredListener {
             ServerPortHolder portHolder,
             AudioFixService audioFixService,
             FfmpegManager ffmpegManager,
+            FfmpegDownloader ffmpegDownloader,
             SubtitleService subtitleService) {
         this.shareRegistry = shareRegistry;
         this.settingsStore = settingsStore;
@@ -67,13 +74,66 @@ public class SharingService implements CloudflaredListener {
         this.portHolder = portHolder;
         this.audioFixService = audioFixService;
         this.ffmpegManager = ffmpegManager;
+        this.ffmpegDownloader = ffmpegDownloader;
         this.subtitleService = subtitleService;
     }
 
     @PostConstruct
     void init() {
         cloudflaredManager.addListener(this);
+        ffmpegDownloader.addListener(this);
         cloudflaredManager.setProtocol(settingsStore.getSettings().getTunnelProtocol());
+    }
+
+    public FfmpegDownloadAssets.Plan ffmpegDownloadPlan() {
+        return ffmpegDownloader.planForCurrentHost();
+    }
+
+    public void downloadFfmpegInBackground() {
+        if (ffmpegDownloader.isDownloadInProgress()) {
+            return;
+        }
+        Thread t = new Thread(() -> {
+            try {
+                ffmpegDownloader.downloadIfNeeded(true);
+                ffmpegManager.recheck();
+            } catch (Exception ex) {
+                onFfmpegDownloadFinished(false, ex.getMessage() != null ? ex.getMessage() : "Download failed");
+            }
+        }, "ffmpeg-download");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    public boolean isFfmpegDownloadInProgress() {
+        return ffmpegDownloader.isDownloadInProgress();
+    }
+
+    public boolean addedShareIncludesNonNativeVideo(Path path, ShareEntry.Kind kind) throws IOException {
+        return VideoBrowserContainers.addedShareIncludesNonNativeVideo(path, kind);
+    }
+
+    public void downloadFfmpegBlocking() throws Exception {
+        AppSettings s = settingsStore.getSettings();
+        s.setFfmpegDownloadConsent(FfmpegDownloadConsent.ALLOWED);
+        settingsStore.update(s);
+        ffmpegDownloader.downloadIfNeeded(true);
+        ffmpegManager.recheck();
+    }
+
+    @Override
+    public void onFfmpegDownloadProgress(int percent, String message) {
+        for (SharingUiListener l : listeners) {
+            l.onFfmpegDownloadProgress(percent, message);
+        }
+    }
+
+    @Override
+    public void onFfmpegDownloadFinished(boolean success, String message) {
+        ffmpegManager.recheck();
+        for (SharingUiListener l : listeners) {
+            l.onFfmpegDownloadFinished(success, message);
+        }
     }
 
     @EventListener
@@ -119,6 +179,10 @@ public class SharingService implements CloudflaredListener {
 
     public AppSettings getSettings() {
         return settingsStore.getSettings();
+    }
+
+    public SettingsStore getSettingsStore() {
+        return settingsStore;
     }
 
     public void saveSettings(AppSettings settings) {

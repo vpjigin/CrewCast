@@ -228,9 +228,18 @@ Cover-art / attached-picture streams are ignored; the main video stream is mappe
 real index (e.g. `-map 0:0`), and audio uses audio-relative indices (`-map 0:a:N`, matching
 `?audio=N` in the player).
 
-- **Install ffmpeg** — macOS: `brew install ffmpeg`; Windows: `winget install ffmpeg`;
-  Linux: `apt install ffmpeg`. Use **Re-check ffmpeg** in Settings if you install it while
-  the app is running.
+- **ffmpeg** — Required for audio fix and subtitles. Lookup order: configured path →
+  `~/.crewcast/bin/` → `PATH` / Homebrew. In the **desktop app**, use **Download ffmpeg**
+  in Settings (one-time, SHA-256 verified; see [docs/FFMPEG-SOURCES.md](docs/FFMPEG-SOURCES.md)).
+  Headless: `ServerApp --download-ffmpeg …`. Manual install: `brew install ffmpeg`,
+  `winget install ffmpeg`, or `apt install ffmpeg`. **Re-check ffmpeg** after installing.
+
+**Tests:** `mvn -pl server test` does **not** download ffmpeg. To run the optional
+real-download integration test (~50–180 MB, network):
+
+```bash
+mvn -pl server test -Dcrewcast.ffmpeg.e2e=true
+```
 - **Cache** — `~/.crewcast/cache/` (or `$crewcast.home/cache` when using
   `-Dcrewcast.home=…`). Default size cap **20 GB** with LRU eviction. **Clear audio cache**
   in Settings removes converted files.

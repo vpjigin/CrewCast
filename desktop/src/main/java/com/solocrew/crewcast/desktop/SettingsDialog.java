@@ -144,7 +144,15 @@ class SettingsDialog extends JDialog {
             prepareMode.setEnabled(sharingService.isFfmpegAvailable() && fixAudio.isSelected());
             updateFfmpegHint();
         });
-        body.add(recheckFfmpeg, "gapleft 4, gaptop 2, wrap");
+        StyledButton downloadFfmpeg = new StyledButton("Download ffmpeg");
+        downloadFfmpeg.setVariant(StyledButton.Variant.SECONDARY);
+        downloadFfmpeg.packToContent();
+        downloadFfmpeg.addActionListener(e -> sharingService.downloadFfmpegInBackground());
+        JPanel ffmpegBtnRow = new JPanel(new MigLayout("ins 0, gap 8", "[][]", "[]"));
+        ffmpegBtnRow.setOpaque(false);
+        ffmpegBtnRow.add(recheckFfmpeg);
+        ffmpegBtnRow.add(downloadFfmpeg);
+        body.add(ffmpegBtnRow, "gapleft 4, gaptop 2, wrap");
 
         JComboBox<String> audioLang = addChoiceRow(body, "Preferred audio language",
                 "Auto picks the first track; otherwise matches this language when available",
@@ -328,6 +336,8 @@ class SettingsDialog extends JDialog {
         copy.setAudioCacheMaxGb(s.getAudioCacheMaxGb());
         copy.setChapterThumbnails(s.isChapterThumbnails());
         copy.setCloudflaredBinaryPath(s.getCloudflaredBinaryPath());
+        copy.setFfmpegBinaryPath(s.getFfmpegBinaryPath());
+        copy.setFfmpegDownloadConsent(s.getFfmpegDownloadConsent());
         return copy;
     }
 

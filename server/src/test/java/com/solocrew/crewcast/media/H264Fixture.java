@@ -22,7 +22,7 @@ final class H264Fixture {
                 "-c:v", "libx264", "-pix_fmt", "yuv420p",
                 "-c:a", "aac", "-b:a", "128k",
                 out.toString());
-        Process p = new ProcessBuilder(cmd).inheritIO().start();
+        Process p = new ProcessBuilder(cmd).redirectErrorStream(true).start();
         if (!p.waitFor(60, TimeUnit.SECONDS)) {
             p.destroyForcibly();
             throw new IOException("ffmpeg timed out");

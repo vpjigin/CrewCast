@@ -51,7 +51,7 @@ class AudioFixIntegrationTest extends CrewcastSpringTestBase {
     static void fixtures(DynamicPropertyRegistry registry) throws Exception {
         assumeFfmpeg();
         if (fixture == null) {
-            fixture = CoverArtFixture.create();
+            fixture = MediaTestFixtures.coverArt();
         }
         videoId = ShareRegistry.idForPath(fixture);
     }
@@ -135,7 +135,7 @@ class AudioFixIntegrationTest extends CrewcastSpringTestBase {
 
     @Test
     void h264StreamReturnsValidMp4Bytes() throws Exception {
-        Path h264 = H264Fixture.create();
+        Path h264 = MediaTestFixtures.h264();
         shareRegistry.addFile(h264);
         String id = shareRegistry.listVideos().stream()
                 .filter(v -> v.path().equals(h264))

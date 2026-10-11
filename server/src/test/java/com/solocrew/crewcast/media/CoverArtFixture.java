@@ -37,7 +37,7 @@ final class CoverArtFixture {
     }
 
     private static void run(List<String> cmd) throws IOException, InterruptedException {
-        Process p = new ProcessBuilder(cmd).inheritIO().start();
+        Process p = new ProcessBuilder(cmd).redirectErrorStream(true).start();
         if (!p.waitFor(120, TimeUnit.SECONDS)) {
             p.destroyForcibly();
             throw new IOException("ffmpeg timed out");

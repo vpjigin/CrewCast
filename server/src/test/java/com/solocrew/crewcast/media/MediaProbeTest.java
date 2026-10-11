@@ -17,7 +17,7 @@ class MediaProbeTest extends CrewcastSpringTestBase {
     @BeforeAll
     static void buildFixture() throws Exception {
         assumeTrue(commandExists("ffmpeg"), "ffmpeg not on PATH");
-        fixture = CoverArtFixture.create();
+        fixture = MediaTestFixtures.coverArt();
     }
 
     static boolean commandExists(String name) {

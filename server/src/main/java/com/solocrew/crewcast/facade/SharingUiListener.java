@@ -16,6 +16,12 @@ public interface SharingUiListener {
     default void onTunnelDownloadProgress(int percent, String message) {
     }
 
+    default void onFfmpegDownloadProgress(int percent, String message) {
+    }
+
+    default void onFfmpegDownloadFinished(boolean success, String message) {
+    }
+
     default void onTunnelUrl(String url) {
     }
 

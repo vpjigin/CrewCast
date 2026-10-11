@@ -30,6 +30,9 @@ public class AppSettings {
     private boolean chapterThumbnails = true;
     /** Optional user override; not downloaded automatically when set. */
     private String cloudflaredBinaryPath;
+    /** Optional path to ffmpeg binary (ffprobe must sit beside it). */
+    private String ffmpegBinaryPath;
+    private FfmpegDownloadConsent ffmpegDownloadConsent = FfmpegDownloadConsent.UNSET;
 
     public List<ShareEntry> getShares() {
         return shares;
@@ -157,6 +160,22 @@ public class AppSettings {
 
     public void setCloudflaredBinaryPath(String cloudflaredBinaryPath) {
         this.cloudflaredBinaryPath = blankToNull(cloudflaredBinaryPath);
+    }
+
+    public String getFfmpegBinaryPath() {
+        return ffmpegBinaryPath;
+    }
+
+    public void setFfmpegBinaryPath(String ffmpegBinaryPath) {
+        this.ffmpegBinaryPath = blankToNull(ffmpegBinaryPath);
+    }
+
+    public FfmpegDownloadConsent getFfmpegDownloadConsent() {
+        return ffmpegDownloadConsent != null ? ffmpegDownloadConsent : FfmpegDownloadConsent.UNSET;
+    }
+
+    public void setFfmpegDownloadConsent(FfmpegDownloadConsent ffmpegDownloadConsent) {
+        this.ffmpegDownloadConsent = ffmpegDownloadConsent != null ? ffmpegDownloadConsent : FfmpegDownloadConsent.UNSET;
     }
 
     /** Legacy settings.json — session keys must never be persisted; dropped on load. */

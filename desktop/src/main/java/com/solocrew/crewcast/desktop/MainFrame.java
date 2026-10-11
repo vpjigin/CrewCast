@@ -20,6 +20,8 @@ import com.solocrew.crewcast.desktop.ui.ViewportWidthPanel;
 import com.solocrew.crewcast.facade.ShareListItem;
 import com.solocrew.crewcast.facade.SharingLinks;
 import com.solocrew.crewcast.facade.SharingService;
+import com.solocrew.crewcast.media.FfmpegAudioSupport;
+import com.solocrew.crewcast.media.FfmpegPromptPolicy;
 import com.solocrew.crewcast.facade.SharingUiListener;
 import com.solocrew.crewcast.facade.TunnelState;
 import com.solocrew.crewcast.facade.ViewerView;
@@ -110,7 +112,11 @@ public class MainFrame extends JFrame implements SharingUiListener {
 
     private final ToggleSwitch chapterThumbnailsToggle = new ToggleSwitch();
     private final ToggleSwitch fixAudioToggle = new ToggleSwitch();
+    private final JLabel fixAudioMutedHint = new JLabel();
     private final JPanel playbackSection = new JPanel();
+    private boolean startSharingFfmpegPromptOfferedThisRun;
+    private boolean ffmpegConsentDialogShowing;
+    private boolean suppressFixAudioToggleEvents;
 
     private final JPanel rightLive = new JPanel();
     private final JPanel rightOnboarding = new JPanel();
@@ -436,17 +442,15 @@ public class MainFrame extends JFrame implements SharingUiListener {
 
         playbackSection.add(new SectionLabel("Playback"), "growx, wrap");
 
-        fixAudioToggle.addActionListener(e -> {
-            if (sharingService != null && sharingService.isFfmpegAvailable()) {
-                AppSettings settings = sharingService.getSettings();
-                settings.setFixAudioForBrowsers(fixAudioToggle.isSelected());
-                sharingService.saveSettings(settings);
-            }
-        });
+        fixAudioToggle.addActionListener(e -> onFixAudioToggleChanged());
         playbackSection.add(playbackRow(
                 "Fix audio for browsers",
                 "Converts AC3 / E-AC3 / DTS to AAC (cached MP4); requires ffmpeg",
                 fixAudioToggle), "growx, wrap");
+        fixAudioMutedHint.setFont(Fonts.ui(500, 12f));
+        fixAudioMutedHint.setForeground(CrewcastTheme.MUTED);
+        fixAudioMutedHint.setVisible(false);
+        playbackSection.add(fixAudioMutedHint, "gapleft 4, gaptop 2, wrap");
         chapterThumbnailsToggle.addActionListener(e -> {
             if (sharingService != null) {
                 AppSettings settings = sharingService.getSettings();
@@ -829,6 +833,7 @@ public class MainFrame extends JFrame implements SharingUiListener {
         }
         sharingService.startSharing();
         refreshDynamicUi();
+        maybeOfferFfmpegConsent(FfmpegPromptPolicy.Trigger.START_SHARING, false);
     }
 
     private void stopSharing() {
@@ -863,8 +868,31 @@ public class MainFrame extends JFrame implements SharingUiListener {
             return;
         }
         boolean ffmpeg = sharingService.isFfmpegAvailable();
-        fixAudioToggle.setEnabled(ffmpeg);
-        fixAudioToggle.setSelected(ffmpeg && sharingService.getSettings().isFixAudioForBrowsers());
+        fixAudioToggle.setEnabled(true);
+        setFixAudioToggleSelected(ffmpeg && sharingService.getSettings().isFixAudioForBrowsers());
+        updateFixAudioMutedHint();
+    }
+
+    private void setFixAudioToggleSelected(boolean selected) {
+        suppressFixAudioToggleEvents = true;
+        fixAudioToggle.setSelected(selected);
+        suppressFixAudioToggleEvents = false;
+    }
+
+    private void updateFixAudioMutedHint() {
+        if (sharingService == null) {
+            fixAudioMutedHint.setVisible(false);
+            return;
+        }
+        AppSettings settings = sharingService.getSettings();
+        boolean show = FfmpegPromptPolicy.shouldShowFixAudioMutedHint(
+                sharingService.isFfmpegAvailable(),
+                settings.isFixAudioForBrowsers(),
+                settings.getFfmpegDownloadConsent());
+        fixAudioMutedHint.setText(show
+                ? "Some videos may have no sound in browsers. Turn this on to fix it."
+                : "");
+        fixAudioMutedHint.setVisible(show);
     }
 
     private void reloadShareList() {
@@ -1284,12 +1312,16 @@ public class MainFrame extends JFrame implements SharingUiListener {
             return;
         }
         try {
+            boolean nonNative = sharingService.addedShareIncludesNonNativeVideo(path, kind);
             if (kind == ShareEntry.Kind.FOLDER) {
                 sharingService.addFolder(path);
             } else {
                 sharingService.addFile(path);
             }
             reloadShareList();
+            if (nonNative) {
+                maybeOfferFfmpegConsent(FfmpegPromptPolicy.Trigger.ADDED_NON_NATIVE_VIDEO, true);
+            }
         } catch (IOException ex) {
             javax.swing.JOptionPane.showMessageDialog(this, ex.getMessage(), "Could not add share",
                     javax.swing.JOptionPane.ERROR_MESSAGE);
@@ -1340,14 +1372,166 @@ public class MainFrame extends JFrame implements SharingUiListener {
         }
     }
 
+    private boolean ffmpegBannerActive;
+
+    private void onFixAudioToggleChanged() {
+        if (sharingService == null || suppressFixAudioToggleEvents) {
+            return;
+        }
+        if (!fixAudioToggle.isSelected()) {
+            AppSettings settings = sharingService.getSettings();
+            settings.setFixAudioForBrowsers(false);
+            sharingService.saveSettings(settings);
+            updateFixAudioMutedHint();
+            return;
+        }
+        if (sharingService.isFfmpegAvailable()) {
+            AppSettings settings = sharingService.getSettings();
+            settings.setFixAudioForBrowsers(true);
+            sharingService.saveSettings(settings);
+            updateFixAudioMutedHint();
+            return;
+        }
+        setFixAudioToggleSelected(false);
+        maybeOfferFfmpegConsent(FfmpegPromptPolicy.Trigger.USER_ENABLED_FIX_AUDIO_TOGGLE, false);
+    }
+
+    private void maybeOfferFfmpegConsent(FfmpegPromptPolicy.Trigger trigger, boolean addedNonNativeVideo) {
+        if (sharingService == null) {
+            return;
+        }
+        if (!FfmpegPromptPolicy.shouldShowPrompt(
+                trigger,
+                sharingService.isFfmpegAvailable(),
+                sharingService.isFfmpegDownloadInProgress(),
+                sharingService.getSettings().getFfmpegDownloadConsent(),
+                startSharingFfmpegPromptOfferedThisRun,
+                addedNonNativeVideo)) {
+            return;
+        }
+        SwingUtilities.invokeLater(() -> offerFfmpegConsentDialogOnEdt(trigger));
+    }
+
+    private void offerFfmpegConsentDialogOnEdt(FfmpegPromptPolicy.Trigger trigger) {
+        if (sharingService == null || ffmpegConsentDialogShowing || sharingService.isFfmpegAvailable()) {
+            return;
+        }
+        if (!FfmpegPromptPolicy.shouldShowPrompt(
+                trigger,
+                sharingService.isFfmpegAvailable(),
+                sharingService.isFfmpegDownloadInProgress(),
+                sharingService.getSettings().getFfmpegDownloadConsent(),
+                startSharingFfmpegPromptOfferedThisRun,
+                trigger == FfmpegPromptPolicy.Trigger.ADDED_NON_NATIVE_VIDEO)) {
+            return;
+        }
+        if (trigger == FfmpegPromptPolicy.Trigger.START_SHARING) {
+            startSharingFfmpegPromptOfferedThisRun = true;
+        }
+        ffmpegConsentDialogShowing = true;
+        try {
+            FfmpegConsentDialog dialog = new FfmpegConsentDialog(
+                    this, sharingService.ffmpegDownloadPlan(), sharingService.getSettingsStore());
+            dialog.setVisible(true);
+            handleFfmpegConsentResult(dialog.getResult());
+        } finally {
+            ffmpegConsentDialogShowing = false;
+        }
+    }
+
+    private void handleFfmpegConsentResult(FfmpegConsentDialog.Result result) {
+        if (sharingService == null) {
+            return;
+        }
+        AppSettings settings = sharingService.getSettings();
+        switch (result) {
+            case DOWNLOAD -> {
+                FfmpegAudioSupport.applyUserChoseDownload(settings);
+                sharingService.saveSettings(settings);
+                setFixAudioToggleSelected(true);
+                sharingService.downloadFfmpegInBackground();
+            }
+            case MANUAL -> {
+                sharingService.recheckFfmpeg();
+                if (sharingService.isFfmpegAvailable()) {
+                    FfmpegAudioSupport.applyManualFfmpegConfigured(settings);
+                    sharingService.saveSettings(settings);
+                    setFixAudioToggleSelected(true);
+                } else {
+                    FfmpegAudioSupport.applyUserDeclined(settings);
+                    sharingService.saveSettings(settings);
+                    setFixAudioToggleSelected(false);
+                    javax.swing.JOptionPane.showMessageDialog(
+                            this,
+                            "Could not use that ffmpeg binary. Check the path and try again.",
+                            "ffmpeg not valid",
+                            javax.swing.JOptionPane.WARNING_MESSAGE);
+                }
+            }
+            case DECLINED, NONE -> {
+                FfmpegAudioSupport.applyUserDeclined(settings);
+                sharingService.saveSettings(settings);
+                setFixAudioToggleSelected(false);
+            }
+        }
+        updateFixAudioMutedHint();
+    }
+
     @Override
     public void onTunnelDownloadProgress(int percent, String message) {
+        if (ffmpegBannerActive) {
+            return;
+        }
         SwingUtilities.invokeLater(() -> {
             downloadBanner.setVisible(true);
             downloadTitle.setText(message != null && !message.isBlank() ? message : "Setting up the secure tunnel");
             downloadSubtitle.setText("Downloading cloudflared once, so public links work. This only happens on first launch.");
             downloadProgress.setPercent(Math.max(0, Math.min(100, percent)));
             downloadPercent.setText(percent + "%");
+        });
+    }
+
+    @Override
+    public void onFfmpegDownloadProgress(int percent, String message) {
+        ffmpegBannerActive = true;
+        SwingUtilities.invokeLater(() -> {
+            downloadBanner.setVisible(true);
+            downloadTitle.setText(message != null && !message.isBlank() ? message : "Downloading ffmpeg");
+            downloadSubtitle.setText("One-time download for browser audio fix. Saved under ~/.crewcast/bin/");
+            downloadProgress.setPercent(Math.max(0, Math.min(100, percent)));
+            downloadPercent.setText(percent + "%");
+        });
+    }
+
+    @Override
+    public void onFfmpegDownloadFinished(boolean success, String message) {
+        ffmpegBannerActive = false;
+        SwingUtilities.invokeLater(() -> {
+            downloadBanner.setVisible(false);
+            reloadShareList();
+            refreshDynamicUi();
+            if (sharingService == null) {
+                return;
+            }
+            AppSettings settings = sharingService.getSettings();
+            if (success && sharingService.isFfmpegAvailable()) {
+                settings.setFixAudioForBrowsers(true);
+                sharingService.saveSettings(settings);
+                setFixAudioToggleSelected(true);
+            } else if (!success) {
+                FfmpegAudioSupport.applyDownloadFailed(settings);
+                sharingService.saveSettings(settings);
+                setFixAudioToggleSelected(false);
+                String detail = message != null && !message.isBlank()
+                        ? message
+                        : "Download failed. Check your network connection and try again.";
+                javax.swing.JOptionPane.showMessageDialog(
+                        this,
+                        detail,
+                        "Could not download ffmpeg",
+                        javax.swing.JOptionPane.ERROR_MESSAGE);
+            }
+            updateFixAudioMutedHint();
         });
     }
 

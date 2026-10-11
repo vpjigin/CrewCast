@@ -35,7 +35,7 @@ For user-facing language, see `PRIVACY.md` (draft).
 | Download | Trigger | Endpoint | Verification |
 |----------|---------|----------|--------------|
 | cloudflared | Tunnel start, no PATH/custom binary | `api.github.com` → official GitHub release asset URL | HTTPS + SHA-256 from GitHub API `digest` field on the asset (no separate `.sha256` files in current releases) |
-| ffmpeg | Not downloaded | User installs locally | N/A |
+| ffmpeg / ffprobe | Optional one-time download (user consent or `--download-ffmpeg`) | `~/.crewcast/bin/` | HTTPS from [allow-listed hosts](FFMPEG-SOURCES.md) (GitHub BtbN or ffmpeg.martin-riedl.de on macOS); SHA-256 verified |
 
 ## What we do not collect
 

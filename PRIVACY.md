@@ -12,7 +12,8 @@ operate a hosted service that stores your videos.
 
 When you run Crewcast, data may be written under `~/.crewcast/` on your machine,
 including settings (owner-only permissions on Unix), optional transcoded audio cache
-files, and an optional downloaded `cloudflared` binary. See [docs/PRIVACY-INVENTORY.md](docs/PRIVACY-INVENTORY.md)
+files, an optional downloaded `cloudflared` binary, and optional downloaded `ffmpeg` /
+`ffprobe` binaries. See [docs/PRIVACY-INVENTORY.md](docs/PRIVACY-INVENTORY.md)
 for detail.
 
 The private link key (`?t=`) is generated when you start sharing and kept in memory
@@ -31,6 +32,10 @@ disk by Crewcast.
   that leg.
 - **First-time tunnel setup**: Crewcast may download `cloudflared` from Cloudflare’s
   official GitHub releases over HTTPS.
+- **Optional ffmpeg download**: If you consent (desktop dialog or `--download-ffmpeg`),
+  Crewcast downloads `ffmpeg` and `ffprobe` once from the allow-listed host for your OS
+  (see [docs/FFMPEG-SOURCES.md](docs/FFMPEG-SOURCES.md)) over HTTPS, verifies SHA-256,
+  and stores them under `~/.crewcast/bin/`.
 
 The built-in web player does not load scripts, fonts, or images from third-party CDNs.
 

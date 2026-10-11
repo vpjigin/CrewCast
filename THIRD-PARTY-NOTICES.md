@@ -55,7 +55,17 @@ The web player uses **system UI fonts** only (no webfont files).
 | Component | License | Source |
 |-----------|---------|--------|
 | cloudflared | Apache-2.0 | https://github.com/cloudflare/cloudflared — downloaded from official GitHub releases when tunnel is enabled and binary not on `PATH` |
-| ffmpeg / ffprobe | GPL/LGPL (build-dependent) | **Not downloaded by Crewcast**; user installs via OS package manager when using browser audio fix |
+| ffmpeg / ffprobe | **Per platform** (see below) | **Downloaded only at user request** — not bundled or distributed by Crewcast with the MIT app. See [docs/FFMPEG-SOURCES.md](docs/FFMPEG-SOURCES.md). |
+
+**ffmpeg / ffprobe license by platform (chosen builds):**
+
+| Platform | Source | License |
+|----------|--------|---------|
+| Windows x64 | `github.com` — BtbN `win64-lgpl` | **LGPL v2.1+** |
+| Linux x64 / arm64 | `github.com` — BtbN `linux64-lgpl` / `linuxarm64-lgpl` | **LGPL v2.1+** |
+| macOS (Intel & Apple Silicon) | **ffmpeg.martin-riedl.de** (individual maintainer; SHA-256 from same host) | **GPL v2+** (verified arm64 build: `--enable-gpl`, libx264/libx265) |
+
+**Extraction:** Linux `.tar.xz` archives use the OS **`tar`** executable (`tar -xJf`); zip archives use the JDK. **No new Maven dependency** for decompression.
 
 ## Design mockups (`docs/design/desktop-ui/`)
 
@@ -74,7 +84,7 @@ The web player uses **system UI fonts** only (no webfont files).
 | Logback (EPL-1.0 **or** LGPL-2.1) | **Yes (accepted choice)** | Used as a logging implementation on the classpath via Spring Boot, not modified. Recipients may rely on **LGPL-2.1** for linking/distribution of combined works; EPL applies if you modify Logback itself. Same pattern as countless MIT/Apache applications using Spring Boot. |
 | SIL OFL (bundled fonts) | Yes | Fonts may be bundled with software; do not sell the font files standalone |
 | cloudflared (optional download) | Yes | Apache-2.0; separate binary, not merged into the MIT source tree |
-| ffmpeg (user-installed) | N/A | Crewcast does not ship ffmpeg; if **you** redistribute ffmpeg binaries, GPL/LGPL terms apply to that redistribution—not to Crewcast source under MIT |
+| ffmpeg (optional download) | N/A | Crewcast spawns ffmpeg as a separate process; if **you** redistribute downloaded binaries, LGPL/GPL terms apply to **those binaries**—not to Crewcast MIT source |
 | Playwright (tests only) | Yes | Not required to ship with the app |
 
 **Nothing in the table above requires Crewcast’s own source to be licensed under GPL or another copyleft license** when distributed under MIT, provided bundled components are used unmodified and their notices are preserved (this file).

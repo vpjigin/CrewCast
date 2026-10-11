@@ -59,7 +59,9 @@ class OnDemandAudioBrowserTest extends CrewcastSpringTestBase {
     static void props(DynamicPropertyRegistry registry) throws Exception {
         assumeTrue(AudioFixIntegrationTest.ffmpegAvailable(), "ffmpeg not on PATH");
         System.setProperty("crewcast.audio.idle-cancel-ms", "3000");
-        fixture = CoverArtFixture.create();
+        if (fixture == null) {
+            fixture = MediaTestFixtures.coverArt();
+        }
     }
 
     @BeforeEach
