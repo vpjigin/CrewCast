@@ -111,3 +111,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;color:#fff;
 @keyframes spin{to{transform:rotate(360deg)}}
 #thumb-video,#thumb-canvas{position:fixed;width:1px;height:1px;opacity:0;
   pointer-events:none;left:-9999px;top:-9999px}
+html.embed,html.embed body{height:100%;overflow:hidden;background:#000}
+html.embed #player{position:absolute;inset:0}
+html.embed #chapter-overlay{position:absolute}

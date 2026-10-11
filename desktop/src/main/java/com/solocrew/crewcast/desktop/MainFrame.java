@@ -128,6 +128,8 @@ public class MainFrame extends JFrame implements SharingUiListener {
     private final JLabel statusSharing = new JLabel("Sharing is off");
     private final JLabel statusViewers = new JLabel("0 people watching · tunnel idle");
     private final StyledButton sharingButton = new StyledButton("Start sharing");
+    private final JLabel folderShareNotice = new JLabel(
+            "Everything in this folder (except hidden files) will be visible to anyone with your link.");
 
     private final UrlField publicLinkField = new UrlField();
     private final UrlField wifiLinkField = new UrlField();
@@ -525,10 +527,15 @@ public class MainFrame extends JFrame implements SharingUiListener {
 
         sharingButton.addActionListener(e -> toggleSharing());
 
-        JPanel text = new JPanel(new MigLayout("ins 0, gap 0", "[grow,fill]", "[]3[]"));
+        folderShareNotice.setFont(Fonts.ui(500, 12f));
+        folderShareNotice.setForeground(CrewcastTheme.MUTED);
+        folderShareNotice.setVisible(false);
+
+        JPanel text = new JPanel(new MigLayout("ins 0, gap 0", "[grow,fill]", "[]3[]3[]"));
         text.setOpaque(false);
         text.add(statusSharing, "growx, wrap");
-        text.add(statusViewers, "growx");
+        text.add(statusViewers, "growx, wrap");
+        text.add(folderShareNotice, "growx");
 
         card.add(statusCardDot, "aligny center");
         card.add(text, "growx, wmin 0");
@@ -925,6 +932,8 @@ public class MainFrame extends JFrame implements SharingUiListener {
         updateShareHeader();
         updateSharingButtonState();
         updateRightPanelMode();
+        boolean hasFolder = entries.stream().anyMatch(i -> i.entry().getKind() == ShareEntry.Kind.FOLDER);
+        folderShareNotice.setVisible(hasFolder);
     }
 
     private JPanel buildShareRow(ShareListItem item) {
@@ -1318,7 +1327,10 @@ public class MainFrame extends JFrame implements SharingUiListener {
     private void chooseFiles() {
         JFileChooser chooser = new JFileChooser();
         chooser.setMultiSelectionEnabled(true);
-        chooser.setFileFilter(new FileNameExtensionFilter("Video files", "mp4", "mkv", "mov", "webm", "m4v"));
+        chooser.setAcceptAllFileFilterUsed(true);
+        chooser.addChoosableFileFilter(new FileNameExtensionFilter("All files", "*"));
+        chooser.addChoosableFileFilter(new FileNameExtensionFilter("Video files", "mp4", "mkv", "mov", "webm", "m4v"));
+        chooser.setFileFilter(chooser.getChoosableFileFilters()[0]);
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             for (File f : chooser.getSelectedFiles()) {
                 addSharePath(f.toPath(), ShareEntry.Kind.FILE);
@@ -1359,7 +1371,7 @@ public class MainFrame extends JFrame implements SharingUiListener {
                     for (File f : files) {
                         if (f.isDirectory()) {
                             addSharePath(f.toPath(), ShareEntry.Kind.FOLDER);
-                        } else if (sharingService != null && sharingService.isSupportedVideoFileName(f.getName())) {
+                        } else if (f.isFile()) {
                             addSharePath(f.toPath(), ShareEntry.Kind.FILE);
                         }
                     }

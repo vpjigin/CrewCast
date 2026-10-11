@@ -8,7 +8,6 @@ import jakarta.annotation.PostConstruct;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
-import java.nio.file.FileVisitOption;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -65,9 +64,6 @@ public class ShareRegistry {
         if (!Files.isRegularFile(abs)) {
             throw new IOException("Not a file: " + abs);
         }
-        if (!isVideoFileName(abs.getFileName().toString())) {
-            throw new IOException("Not a supported video file: " + abs.getFileName());
-        }
         addShare(new ShareEntry(abs.toString(), ShareEntry.Kind.FILE));
     }
 
@@ -110,9 +106,11 @@ public class ShareRegistry {
                     out.add(toVideoFile(root));
                 }
             } else if (Files.isDirectory(root)) {
-                try (Stream<Path> walk = Files.walk(root, FileVisitOption.FOLLOW_LINKS)) {
+                try (Stream<Path> walk = Files.walk(root)) {
                     walk.filter(Files::isRegularFile)
                             .filter(p -> isVideoFileName(p.getFileName().toString()))
+                            .filter(p -> ShareExposeFilter.shouldExposeFromFolder(root, p))
+                            .filter(this::isSharedPathAllowedUnchecked)
                             .forEach(p -> out.add(toVideoFile(p)));
                 }
             }
@@ -132,22 +130,98 @@ public class ShareRegistry {
         return findById(id).map(VideoFile::path);
     }
 
+    public synchronized List<SharedFile> listSharedFiles() throws IOException {
+        List<SharedFile> out = new ArrayList<>();
+        for (ShareEntry share : settingsStore.getSettings().getShares()) {
+            Path root = Path.of(share.getPath()).toAbsolutePath().normalize();
+            if (!Files.exists(root)) {
+                continue;
+            }
+            if (share.getKind() == ShareEntry.Kind.FILE) {
+                if (Files.isRegularFile(root) && isSharedPathAllowedUnchecked(root)) {
+                    out.add(toSharedFile(root));
+                }
+            } else if (Files.isDirectory(root)) {
+                try (Stream<Path> walk = Files.walk(root)) {
+                    walk.filter(Files::isRegularFile)
+                            .filter(p -> ShareExposeFilter.shouldExposeFromFolder(root, p))
+                            .filter(this::isSharedPathAllowedUnchecked)
+                            .forEach(p -> out.add(toSharedFile(p)));
+                }
+            }
+        }
+        out.sort(Comparator.comparing(SharedFile::name, String.CASE_INSENSITIVE_ORDER));
+        return out;
+    }
+
+    public synchronized Optional<SharedFile> findSharedFileById(String id) throws IOException {
+        if (id == null || id.isBlank()) {
+            return Optional.empty();
+        }
+        return listSharedFiles().stream().filter(f -> f.id().equals(id)).findFirst();
+    }
+
+    public synchronized Optional<Path> resolveSharedPath(String id) throws IOException {
+        return findSharedFileById(id).map(SharedFile::path);
+    }
+
     public synchronized boolean isPathAllowed(Path candidate) throws IOException {
         Path path = candidate.toAbsolutePath().normalize();
         if (!Files.exists(path) || !Files.isRegularFile(path) || !isVideoFileName(path.getFileName().toString())) {
             return false;
         }
+        return isSharedPathAllowed(path);
+    }
+
+    public synchronized boolean isSharedPathAllowed(Path candidate) {
+        Path path = candidate.toAbsolutePath().normalize();
+        if (!Files.isRegularFile(path)) {
+            return false;
+        }
+        return isSharedPathAllowedUnchecked(path);
+    }
+
+    private boolean isSharedPathAllowedUnchecked(Path path) {
+        Path normalized = path.toAbsolutePath().normalize();
+        Path real;
+        try {
+            real = normalized.toRealPath();
+        } catch (IOException e) {
+            return false;
+        }
         for (ShareEntry share : settingsStore.getSettings().getShares()) {
             Path root = Path.of(share.getPath()).toAbsolutePath().normalize();
+            Path rootReal;
+            try {
+                rootReal = Files.exists(root) ? root.toRealPath() : root;
+            } catch (IOException e) {
+                continue;
+            }
             if (share.getKind() == ShareEntry.Kind.FILE) {
-                if (path.equals(root)) {
+                if (real.equals(rootReal)) {
                     return true;
                 }
-            } else if (path.startsWith(root)) {
+            } else if (real.startsWith(rootReal)) {
                 return true;
             }
         }
         return false;
+    }
+
+    public synchronized String primaryShareTitle() {
+        List<ShareEntry> shares = settingsStore.getSettings().getShares();
+        if (shares.isEmpty()) {
+            return "Shared files";
+        }
+        ShareEntry first = shares.getFirst();
+        Path root = Path.of(first.getPath());
+        if (first.getKind() == ShareEntry.Kind.FOLDER && Files.isDirectory(root)) {
+            return root.getFileName().toString();
+        }
+        if (first.getKind() == ShareEntry.Kind.FILE && Files.isRegularFile(root)) {
+            return root.getFileName().toString();
+        }
+        return root.getFileName() != null ? root.getFileName().toString() : "Shared files";
     }
 
     public static String idForPath(Path path) {
@@ -163,6 +237,19 @@ public class ShareRegistry {
 
     private VideoFile toVideoFile(Path path) {
         return new VideoFile(idForPath(path), path.getFileName().toString(), path);
+    }
+
+    private SharedFile toSharedFile(Path path) {
+        long size = 0;
+        long modified = 0;
+        try {
+            size = Files.size(path);
+            modified = Files.getLastModifiedTime(path).toMillis();
+        } catch (IOException ignored) {
+            // leave zeros
+        }
+        String name = path.getFileName().toString();
+        return new SharedFile(idForPath(path), name, path, FileKind.forFileName(name), size, modified);
     }
 
     public static boolean isVideoFileName(String name) {
@@ -191,9 +278,11 @@ public class ShareRegistry {
         if (!Files.isDirectory(root)) {
             return out;
         }
-        try (Stream<Path> walk = Files.walk(root, FileVisitOption.FOLLOW_LINKS)) {
+        try (Stream<Path> walk = Files.walk(root)) {
             walk.filter(Files::isRegularFile)
                     .filter(p -> isVideoFileName(p.getFileName().toString()))
+                    .filter(p -> ShareExposeFilter.shouldExposeFromFolder(root, p))
+                    .filter(this::isSharedPathAllowedUnchecked)
                     .forEach(p -> out.add(p.toAbsolutePath().normalize()));
         }
         return out;
