@@ -1,0 +1,20 @@
+# Build output
+target/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS / logs
+.DS_Store
+*.log
+
+# Local screenshots and captures (not part of the product)
+*-screenshot.png
+*-screenshot.jpg
+screenshots/
+docs/screenshots/
+
+# Playwright browser cache (tests may download locally)
+.playwright/

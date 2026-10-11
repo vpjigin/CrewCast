@@ -1,0 +1,2 @@
+Manrope is licensed under the SIL Open Font License 1.1.
+See https://openfontlicense.org and the Manrope project (Google Fonts / OFL).

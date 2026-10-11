@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Crewcast sharing live</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<!-- Static mockup: system fonts only (production desktop app bundles Manrope + JetBrains Mono locally). -->
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width:1120px;height:760px;box-sizing:border-box;padding:40px;background:linear-gradient(135deg,#dfe4ee,#c3ccdc);display:flex;font-family:system-ui,sans-serif">
+<div style="width:1040px;height:680px;background:#14171c;border-radius:12px;box-shadow:0 28px 64px rgba(10,14,24,.38),0 0 0 1px rgba(255,255,255,.07);overflow:hidden;display:flex;flex-direction:column;color:#e8ebf0">
+
+<!-- title bar -->
+<div style="height:44px;flex:none;background:#1a1e25;border-bottom:1px solid #262b34;display:flex;align-items:center;padding:0 16px;gap:16px">
+<div aria-hidden="true" style="display:flex;gap:8px;width:80px">
+<span style="width:12px;height:12px;border-radius:6px;background:#ff5f57"></span>
+<span style="width:12px;height:12px;border-radius:6px;background:#febc2e"></span>
+<span style="width:12px;height:12px;border-radius:6px;background:#28c840"></span>
+</div>
+<div style="flex:1;text-align:center;font-size:13px;font-weight:700;letter-spacing:.2px;color:#c9d0db">Crewcast</div>
+<div style="width:80px;display:flex;justify-content:flex-end">
+<button aria-label="Settings" style="width:30px;height:30px;border-radius:8px;border:0;background:transparent;color:#9aa4b4;display:flex;align-items:center;justify-content:center;cursor:pointer">
+<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"></path><circle cx="16" cy="6" r="2"></circle><circle cx="10" cy="12" r="2"></circle><circle cx="18" cy="18" r="2"></circle></svg>
+</button>
+</div>
+</div>
+
+<!-- body -->
+<div style="flex:1;min-height:0;display:flex">
+
+<!-- left: shares -->
+<div style="width:380px;box-sizing:border-box;flex:none;padding:20px;border-right:1px solid #262b34;display:flex;flex-direction:column;gap:14px;overflow:hidden">
+<div style="display:flex;align-items:center;justify-content:space-between">
+<div>
+<div style="font-size:15px;font-weight:700">Shared videos</div>
+<div style="font-size:12px;color:#8b94a3;margin-top:2px">3 items · 27 videos</div>
+</div>
+<div style="display:flex;gap:6px">
+<button style="display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 11px;border-radius:8px;border:1px solid #2f3541;background:#1f242c;color:#e8ebf0;font:600 12.5px system-ui,sans-serif;cursor:pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>Folder</button>
+<button style="display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 11px;border-radius:8px;border:1px solid #2f3541;background:#1f242c;color:#e8ebf0;font:600 12.5px system-ui,sans-serif;cursor:pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>Files</button>
+</div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:8px">
+<sc-for list="{{shares}}" as="item" hint-placeholder-count="3">
+<div style="display:flex;align-items:center;gap:12px;padding:10px 8px 10px 12px;border-radius:10px;background:#1b1f26;border:1px solid #262b34">
+<div style="width:36px;height:36px;flex:none;border-radius:9px;background:#252b36;display:flex;align-items:center;justify-content:center;color:#9db4ff">
+<sc-if value="{{item.isFolder}}" hint-placeholder-val="{{true}}">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+</sc-if>
+<sc-if value="{{item.isFile}}" hint-placeholder-val="{{false}}">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="M10 9.5v5l4.5-2.5z"></path></svg>
+</sc-if>
+</div>
+<div style="flex:1;min-width:0">
+<div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{item.name}}</div>
+<div style="font-size:12px;color:#8b94a3;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{item.meta}}</div>
+</div>
+<button aria-label="Stop sharing {{item.name}}" style="width:30px;height:30px;flex:none;border-radius:8px;border:0;background:transparent;color:#8b94a3;display:flex;align-items:center;justify-content:center;cursor:pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+</div>
+</sc-for>
+</div>
+
+<div style="border:1.5px dashed #323945;border-radius:10px;height:64px;display:flex;align-items:center;justify-content:center;font-size:12.5px;color:#8b94a3">Drop folders or video files here</div>
+
+<div style="margin-top:auto;display:flex;flex-direction:column;gap:12px;padding-top:14px;border-top:1px solid #262b34">
+<div style="font-size:11px;font-weight:700;letter-spacing:.8px;color:#8b94a3;text-transform:uppercase">Playback</div>
+<div style="display:flex;align-items:center;gap:12px">
+<div style="flex:1;min-width:0">
+<div style="font-size:13px;font-weight:600">Fix audio for browsers</div>
+<div style="font-size:12px;color:#8b94a3;margin-top:2px;line-height:1.4">Converts AC3 / DTS tracks to AAC while streaming</div>
+</div>
+<button aria-pressed="true" aria-label="Fix audio for browsers" style="width:38px;height:22px;flex:none;border-radius:11px;border:0;padding:2px;background:{{accent}};display:flex;justify-content:flex-end;cursor:pointer"><span style="width:18px;height:18px;border-radius:9px;background:#ffffff"></span></button>
+</div>
+<div style="display:flex;align-items:center;gap:12px">
+<div style="flex:1;min-width:0">
+<div style="font-size:13px;font-weight:600">Chapter thumbnails</div>
+<div style="font-size:12px;color:#8b94a3;margin-top:2px;line-height:1.4">20-frame jump grid in the player</div>
+</div>
+<button aria-pressed="true" aria-label="Chapter thumbnails" style="width:38px;height:22px;flex:none;border-radius:11px;border:0;padding:2px;background:{{accent}};display:flex;justify-content:flex-end;cursor:pointer"><span style="width:18px;height:18px;border-radius:9px;background:#ffffff"></span></button>
+</div>
+</div>
+</div>
+
+<!-- right: status + links -->
+<div style="flex:1;min-width:0;box-sizing:border-box;padding:20px 24px;display:flex;flex-direction:column;gap:14px;overflow:hidden">
+
+<div style="display:flex;align-items:center;gap:14px;padding:16px 18px;border-radius:12px;background:linear-gradient(135deg,#17352b,#1b1f26 70%);border:1px solid #24493b">
+<span style="width:12px;height:12px;border-radius:6px;background:#34d399;box-shadow:0 0 0 5px rgba(52,211,153,.18);flex:none"></span>
+<div style="flex:1;min-width:0">
+<div style="font-size:17px;font-weight:800">Sharing is on</div>
+<div style="font-size:12.5px;color:#9fb8ad;margin-top:3px">2 people watching · tunnel connected</div>
+</div>
+<button style="display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:9px;border:1px solid #6b3340;background:#2a1a20;color:#ff8da1;font:700 13px system-ui,sans-serif;cursor:pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2.5"></rect></svg>Stop sharing</button>
+</div>
+
+<div style="padding:14px 16px;border-radius:12px;background:#1b1f26;border:1px solid #262b34;display:flex;flex-direction:column;gap:10px">
+<div style="display:flex;align-items:center;gap:8px">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9db4ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"></path></svg>
+<div style="font-size:13px;font-weight:700">Public link</div>
+<div style="font-size:12px;color:#8b94a3">Anyone with this link, from anywhere</div>
+</div>
+<div style="display:flex;align-items:center;gap:6px;height:40px;padding:0 5px 0 12px;border-radius:9px;background:#0f1216;border:1px solid #2a2f38">
+<div style="flex:1;min-width:0;font:400 12.5px ui-monospace,monospace;color:#d5dbe6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">https://example.trycloudflare.com/?t=xxxxxxxx</div>
+<button style="display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;border-radius:7px;border:0;background:{{accent}};color:#0b1020;font:700 12px system-ui,sans-serif;cursor:pointer"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15V6a2 2 0 0 1 2-2h9"></path></svg>Copy</button>
+<button aria-label="Open public link in browser" style="width:30px;height:30px;border-radius:7px;border:0;background:#232933;color:#c9d0db;display:flex;align-items:center;justify-content:center;cursor:pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"></path></svg></button>
+</div>
+<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:#8b94a3">
+<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>
+<span style="flex:1">The <span style="font-family:ui-monospace,monospace">?t=</span> key is private to this session</span>
+<button style="display:inline-flex;align-items:center;gap:5px;border:0;background:transparent;color:#9db4ff;font:600 12px system-ui,sans-serif;cursor:pointer;padding:0"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14-4M4 4v4h4M4 13a8 8 0 0 0 14 4M20 20v-4h-4"></path></svg>New link</button>
+</div>
+</div>
+
+<div style="padding:14px 16px;border-radius:12px;background:#1b1f26;border:1px solid #262b34;display:flex;flex-direction:column;gap:10px">
+<div style="display:flex;align-items:center;gap:8px">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9db4ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0"></path><circle cx="12" cy="19.5" r="1" fill="#9db4ff"></circle></svg>
+<div style="font-size:13px;font-weight:700">Same Wi‑Fi link</div>
+<div style="font-size:12px;color:#8b94a3">Fastest, no internet needed</div>
+</div>
+<div style="display:flex;align-items:center;gap:6px;height:40px;padding:0 5px 0 12px;border-radius:9px;background:#0f1216;border:1px solid #2a2f38">
+<div style="flex:1;min-width:0;font:400 12.5px ui-monospace,monospace;color:#d5dbe6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">http://192.168.0.10:8080/?t=xxxxxxxx</div>
+<button style="display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;border-radius:7px;border:0;background:#232933;color:#e8ebf0;font:700 12px system-ui,sans-serif;cursor:pointer"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15V6a2 2 0 0 1 2-2h9"></path></svg>Copy</button>
+<button aria-label="Open Wi-Fi link in browser" style="width:30px;height:30px;border-radius:7px;border:0;background:#232933;color:#c9d0db;display:flex;align-items:center;justify-content:center;cursor:pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"></path></svg></button>
+</div>
+</div>
+
+<div style="flex:1;min-height:0;display:flex;gap:14px">
+<div style="width:250px;flex:none;box-sizing:border-box;padding:14px;border-radius:12px;background:#1b1f26;border:1px solid #262b34;display:flex;gap:14px;align-items:center">
+<div style="width:112px;height:112px;flex:none;border-radius:8px;background:#ffffff;display:flex;align-items:center;justify-content:center">
+<svg width="100" height="100" viewBox="0 0 21 21" role="img" aria-label="QR code for the public link"><path d="{{qrPath}}" fill="#0b0d11" fill-rule="evenodd"></path></svg>
+</div>
+<div style="min-width:0;display:flex;flex-direction:column;gap:8px">
+<div style="font-size:13px;font-weight:700;line-height:1.3">Scan with your phone</div>
+<div style="display:flex;background:#0f1216;border-radius:7px;padding:2px;border:1px solid #2a2f38">
+<button aria-pressed="true" style="flex:1;height:24px;border:0;border-radius:5px;background:#2b3240;color:#ffffff;font:700 11px system-ui,sans-serif;cursor:pointer">Public</button>
+<button aria-pressed="false" style="flex:1;height:24px;border:0;border-radius:5px;background:transparent;color:#8b94a3;font:700 11px system-ui,sans-serif;cursor:pointer">Wi‑Fi</button>
+</div>
+</div>
+</div>
+
+<div style="flex:1;min-width:0;box-sizing:border-box;padding:14px 16px;border-radius:12px;background:#1b1f26;border:1px solid #262b34;display:flex;flex-direction:column;gap:8px">
+<div style="display:flex;align-items:center;gap:8px">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9db4ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"></circle><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3.5 6"></path></svg>
+<div style="font-size:13px;font-weight:700">Watching now</div>
+</div>
+<sc-for list="{{viewers}}" as="v" hint-placeholder-count="2">
+<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;background:#14171c">
+<span style="width:8px;height:8px;border-radius:4px;background:#34d399;flex:none"></span>
+<div style="flex:1;min-width:0">
+<div style="font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{v.device}}</div>
+<div style="font-size:11.5px;color:#8b94a3;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{v.file}} · {{v.where}}</div>
+</div>
+<button style="border:0;background:transparent;color:#ff8da1;font:600 11.5px system-ui,sans-serif;cursor:pointer;padding:4px">Remove</button>
+</div>
+</sc-for>
+</div>
+</div>
+
+</div>
+</div>
+
+<!-- status bar -->
+<div style="height:30px;flex:none;box-sizing:border-box;background:#1a1e25;border-top:1px solid #262b34;display:flex;align-items:center;justify-content:space-between;padding:0 16px;font-size:11.5px;color:#8b94a3">
+<div style="display:flex;align-items:center;gap:14px">
+<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:7px;height:7px;border-radius:4px;background:#34d399"></span>Tunnel connected</span>
+<span>Server on port 52814</span>
+<span>Keeping this computer awake</span>
+</div>
+<span>Crewcast v0.1.0</span>
+</div>
+
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#5b8cff","options":["#5b8cff","#8b7bff","#2dd4bf","#f59e0b"]},"$preview":{"width":1120,"height":760}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const sq = (x, y, w) => `M${x} ${y}h${w}v${w}h-${w}z`;
+    let d = '';
+    [[0, 0], [14, 0], [0, 14]].forEach(([x, y]) => {
+      d += sq(x, y, 7) + sq(x + 1, y + 1, 5) + sq(x + 2, y + 2, 3);
+    });
+    const rows = {
+      0: [9, 11, 12], 1: [10, 12], 2: [9, 10, 12], 3: [9, 11], 4: [10, 11, 12], 5: [9, 12],
+      6: [8, 10, 12], 7: [9, 12],
+      8: [1, 3, 4, 7, 8, 10, 13, 15, 16, 18, 20],
+      9: [0, 2, 3, 6, 8, 9, 12, 14, 15, 17, 19],
+      10: [1, 2, 4, 6, 7, 10, 11, 13, 16, 18, 20],
+      11: [0, 3, 5, 6, 8, 9, 12, 14, 17, 19, 20],
+      12: [1, 4, 6, 7, 10, 11, 13, 15, 16, 18],
+      13: [8, 10, 11, 13, 14, 16, 18, 19],
+      14: [9, 12, 14, 15, 17, 20],
+      15: [8, 9, 11, 13, 16, 18],
+      16: [10, 12, 14, 15, 17, 19, 20],
+      17: [9, 11, 13, 16, 18],
+      18: [8, 10, 12, 14, 17, 19, 20],
+      19: [9, 11, 13, 15, 16, 18],
+      20: [8, 10, 12, 14, 17, 19, 20]
+    };
+    Object.keys(rows).forEach((y) => rows[y].forEach((x) => { d += sq(x, Number(y), 1); }));
+    return {
+      accent: this.props.accent ?? '#5b8cff',
+      qrPath: d,
+      shares: [
+        { isFolder: true, isFile: false, name: 'Movies/Crewcast', meta: '24 videos · 38.2 GB' },
+        { isFolder: true, isFile: false, name: 'Downloads/film', meta: '2 videos · 6.4 GB' },
+        { isFolder: false, isFile: true, name: 'school_video.mkv', meta: '1 file · 2.1 GB' }
+      ],
+      viewers: [
+        { device: 'iPhone · Safari', file: 'school_video.mkv', where: 'on Wi‑Fi' },
+        { device: 'Chrome on Windows', file: 'film/Sarvam Maya.mkv', where: 'via tunnel' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

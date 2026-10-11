@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Crewcast first run</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<!-- Static mockup: system fonts only (production desktop app bundles Manrope + JetBrains Mono locally). -->
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width:1120px;height:760px;box-sizing:border-box;padding:40px;background:linear-gradient(135deg,#dfe4ee,#c3ccdc);display:flex;font-family:system-ui,sans-serif">
+<div style="width:1040px;height:680px;background:#14171c;border-radius:12px;box-shadow:0 28px 64px rgba(10,14,24,.38),0 0 0 1px rgba(255,255,255,.07);overflow:hidden;display:flex;flex-direction:column;color:#e8ebf0">
+
+<div style="height:44px;flex:none;background:#1a1e25;border-bottom:1px solid #262b34;display:flex;align-items:center;padding:0 16px;gap:16px">
+<div aria-hidden="true" style="display:flex;gap:8px;width:80px">
+<span style="width:12px;height:12px;border-radius:6px;background:#ff5f57"></span>
+<span style="width:12px;height:12px;border-radius:6px;background:#febc2e"></span>
+<span style="width:12px;height:12px;border-radius:6px;background:#28c840"></span>
+</div>
+<div style="flex:1;text-align:center;font-size:13px;font-weight:700;letter-spacing:.2px;color:#c9d0db">Crewcast</div>
+<div style="width:80px;display:flex;justify-content:flex-end">
+<button aria-label="Settings" style="width:30px;height:30px;border-radius:8px;border:0;background:transparent;color:#9aa4b4;display:flex;align-items:center;justify-content:center;cursor:pointer">
+<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"></path><circle cx="16" cy="6" r="2"></circle><circle cx="10" cy="12" r="2"></circle><circle cx="18" cy="18" r="2"></circle></svg>
+</button>
+</div>
+</div>
+
+<!-- first-run banner -->
+<div style="flex:none;display:flex;align-items:center;gap:14px;padding:12px 20px;background:#1c2233;border-bottom:1px solid #2a3350">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9db4ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"></path></svg>
+<div style="flex:1;min-width:0">
+<div style="font-size:13px;font-weight:700">Setting up the secure tunnel</div>
+<div style="font-size:12px;color:#9aa7c7;margin-top:2px">Downloading cloudflared once, so public links work. This only happens on first launch.</div>
+</div>
+<div style="width:220px;flex:none">
+<div style="height:6px;border-radius:3px;background:#2a3350;overflow:hidden"><div style="width:64%;height:100%;border-radius:3px;background:{{accent}}"></div></div>
+<div style="font-size:11.5px;color:#9aa7c7;margin-top:5px;text-align:right">64%</div>
+</div>
+</div>
+
+<div style="flex:1;min-height:0;display:flex">
+
+<!-- left: empty shares -->
+<div style="width:380px;box-sizing:border-box;flex:none;padding:20px;border-right:1px solid #262b34;display:flex;flex-direction:column;gap:14px">
+<div style="display:flex;align-items:center;justify-content:space-between">
+<div>
+<div style="font-size:15px;font-weight:700">Shared videos</div>
+<div style="font-size:12px;color:#8b94a3;margin-top:2px">Nothing shared yet</div>
+</div>
+</div>
+<div style="flex:1;min-height:0;border:1.5px dashed #323945;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px;text-align:center">
+<div style="width:52px;height:52px;border-radius:14px;background:#1f2430;display:flex;align-items:center;justify-content:center;color:#9db4ff">
+<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+</div>
+<div style="font-size:14px;font-weight:700">Drop a folder or videos here</div>
+<div style="font-size:12.5px;color:#8b94a3;line-height:1.5;max-width:230px">mp4, mkv, mov, webm and m4v files inside will show up for viewers.</div>
+<div style="display:flex;gap:8px;margin-top:4px">
+<button style="display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 14px;border-radius:9px;border:0;background:{{accent}};color:#0b1020;font:700 12.5px system-ui,sans-serif;cursor:pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>Add folder</button>
+<button style="display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 14px;border-radius:9px;border:1px solid #2f3541;background:#1f242c;color:#e8ebf0;font:700 12.5px system-ui,sans-serif;cursor:pointer">Add files</button>
+</div>
+</div>
+</div>
+
+<!-- right: how it works -->
+<div style="flex:1;min-width:0;box-sizing:border-box;padding:28px 32px;display:flex;flex-direction:column;gap:20px">
+<div>
+<div style="font-size:24px;font-weight:800;line-height:1.2">Share videos from this computer</div>
+<div style="font-size:13.5px;color:#9aa4b4;margin-top:8px;line-height:1.55;max-width:460px">Pick what to share, press start, and open the link on any phone, TV or laptop. Nothing is uploaded anywhere.</div>
+</div>
+
+<div style="display:flex;flex-direction:column;gap:10px">
+<sc-for list="{{steps}}" as="s" hint-placeholder-count="3">
+<div style="display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:12px;background:#1b1f26;border:1px solid #262b34">
+<div style="width:30px;height:30px;flex:none;border-radius:15px;background:#252b36;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#9db4ff">{{s.n}}</div>
+<div style="flex:1;min-width:0">
+<div style="font-size:13.5px;font-weight:700">{{s.title}}</div>
+<div style="font-size:12.5px;color:#8b94a3;margin-top:2px">{{s.body}}</div>
+</div>
+</div>
+</sc-for>
+</div>
+
+<div style="margin-top:auto;display:flex;align-items:center;gap:14px">
+<button disabled="" style="display:inline-flex;align-items:center;justify-content:center;gap:10px;height:48px;padding:0 28px;border-radius:12px;border:0;background:#242a34;color:#6b7482;font:800 15px system-ui,sans-serif;cursor:not-allowed"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"></path></svg>Start sharing</button>
+<div style="font-size:12.5px;color:#8b94a3">Add a folder or file first</div>
+</div>
+</div>
+</div>
+
+<div style="height:30px;flex:none;box-sizing:border-box;background:#1a1e25;border-top:1px solid #262b34;display:flex;align-items:center;justify-content:space-between;padding:0 16px;font-size:11.5px;color:#8b94a3">
+<div style="display:flex;align-items:center;gap:14px">
+<span style="display:inline-flex;align-items:center;gap:6px"><span style="width:7px;height:7px;border-radius:4px;background:#5c6574"></span>Tunnel off</span>
+<span>Server stopped</span>
+</div>
+<span>Crewcast v0.1.0</span>
+</div>
+
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#5b8cff","options":["#5b8cff","#8b7bff","#2dd4bf","#f59e0b"]},"$preview":{"width":1120,"height":760}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      accent: this.props.accent ?? '#5b8cff',
+      steps: [
+        { n: '1', title: 'Choose what to share', body: 'Folders are rescanned automatically, so new files appear on their own.' },
+        { n: '2', title: 'Press Start sharing', body: 'A private link, a Wi‑Fi link and a QR code appear here.' },
+        { n: '3', title: 'Open the link anywhere', body: 'Same Wi‑Fi or across the internet, in any modern browser.' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>
