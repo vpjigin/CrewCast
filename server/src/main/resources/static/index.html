@@ -44,10 +44,6 @@
     <div id="modal-preview" class="modal-body" hidden>
       <div class="preview-frame" id="preview-frame"></div>
     </div>
-    <div id="modal-viewer" class="modal-body" hidden>
-      <iframe id="viewer-frame" class="viewer-frame" title="Media viewer" allow="fullscreen"></iframe>
-      <img id="viewer-image" class="viewer-frame" alt="" tabindex="-1" hidden>
-    </div>
     <div id="modal-no-preview" class="no-preview" hidden>
       <div class="no-preview-icon" id="no-preview-ext"></div>
       <div class="no-preview-text">
@@ -56,7 +52,6 @@
       </div>
     </div>
     <div class="modal-actions">
-      <button type="button" class="btn btn-secondary" id="btn-back" hidden>Back</button>
       <button type="button" class="btn btn-outline" id="btn-view" hidden>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>
         View
@@ -66,6 +61,27 @@
         Download
       </a>
     </div>
+  </div>
+</div>
+
+<div id="image-viewer" class="image-viewer" hidden>
+  <div class="image-viewer-bar">
+    <div id="image-viewer-title" class="image-viewer-title"></div>
+    <div class="image-viewer-actions">
+      <a class="btn btn-outline image-viewer-download" id="image-viewer-download" download href="#">Download</a>
+      <button type="button" class="image-viewer-close" id="image-viewer-close" aria-label="Close">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+      </button>
+    </div>
+  </div>
+  <button type="button" class="image-nav image-nav-prev" id="image-nav-prev" aria-label="Previous image" hidden>
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg>
+  </button>
+  <button type="button" class="image-nav image-nav-next" id="image-nav-next" aria-label="Next image" hidden>
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+  </button>
+  <div class="image-viewer-stage" id="image-viewer-stage">
+    <img id="image-viewer-img" alt="" src="">
   </div>
 </div>
 

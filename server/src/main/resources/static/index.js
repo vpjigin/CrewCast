@@ -9,29 +9,35 @@
 
   var files = [];
   var selected = null;
-  var viewing = false;
   var lastFocus = null;
+  var imageFiles = [];
+  var imageIndex = 0;
+  var imageActualSize = false;
 
   var grid = document.getElementById('file-grid');
   var headerCount = document.getElementById('header-count');
   var shareTitle = document.getElementById('share-title');
   var statusMessage = document.getElementById('status-message');
   var modal = document.getElementById('modal');
-  var modalDialog = document.getElementById('modal-dialog');
   var modalTitle = document.getElementById('modal-title');
   var modalSub = document.getElementById('modal-sub');
   var modalPreview = document.getElementById('modal-preview');
   var previewFrame = document.getElementById('preview-frame');
-  var modalViewer = document.getElementById('modal-viewer');
-  var viewerFrame = document.getElementById('viewer-frame');
-  var viewerImage = document.getElementById('viewer-image');
   var modalNoPreview = document.getElementById('modal-no-preview');
   var noPreviewExt = document.getElementById('no-preview-ext');
-  var btnBack = document.getElementById('btn-back');
   var btnView = document.getElementById('btn-view');
   var btnDownload = document.getElementById('btn-download');
   var btnClose = document.getElementById('modal-close');
   var btnBackdrop = document.getElementById('modal-backdrop');
+
+  var imageViewer = document.getElementById('image-viewer');
+  var imageViewerTitle = document.getElementById('image-viewer-title');
+  var imageViewerImg = document.getElementById('image-viewer-img');
+  var imageViewerStage = document.getElementById('image-viewer-stage');
+  var imageViewerDownload = document.getElementById('image-viewer-download');
+  var imageViewerClose = document.getElementById('image-viewer-close');
+  var imageNavPrev = document.getElementById('image-nav-prev');
+  var imageNavNext = document.getElementById('image-nav-next');
 
   function pageToken() {
     return new URLSearchParams(window.location.search).get('t');
@@ -99,11 +105,8 @@
     return url;
   }
 
-  function stopPlayback() {
-    viewerFrame.src = 'about:blank';
-    viewerImage.removeAttribute('src');
-    viewerImage.hidden = true;
-    viewerFrame.hidden = false;
+  function rebuildImageList() {
+    imageFiles = files.filter(isImage);
   }
 
   function renderGrid() {
@@ -158,11 +161,11 @@
       card.addEventListener('click', function () { openModal(f, card); });
       grid.appendChild(card);
     });
+    rebuildImageList();
   }
 
   function openModal(f, cardEl) {
     selected = f;
-    viewing = false;
     lastFocus = cardEl || document.activeElement;
     updateModal();
     modal.hidden = false;
@@ -171,11 +174,9 @@
   }
 
   function closeModal() {
-    stopPlayback();
     modal.hidden = true;
     selected = null;
-    viewing = false;
-    document.body.style.overflow = '';
+    document.body.style.overflow = imageViewer.hidden ? '' : 'hidden';
     if (lastFocus && lastFocus.focus) lastFocus.focus();
   }
 
@@ -188,16 +189,11 @@
     btnDownload.setAttribute('download', f.name);
 
     var showView = canView(f);
-    modalDialog.classList.toggle('viewing', viewing && showView);
-
-    modalPreview.hidden = !(showView && !viewing);
-    modalViewer.hidden = !(showView && viewing);
+    modalPreview.hidden = !showView;
     modalNoPreview.hidden = showView;
+    btnView.hidden = !showView;
 
-    btnView.hidden = !(showView && !viewing);
-    btnBack.hidden = !(showView && viewing);
-
-    if (showView && !viewing) {
+    if (showView) {
       previewFrame.innerHTML = '';
       previewFrame.style.background = gradientFor(f.name);
       if (isVideo(f)) {
@@ -214,48 +210,88 @@
         previewFrame.style.background = '#0B0D11';
         previewFrame.appendChild(img);
       }
-    }
-
-    if (showView && viewing) {
-      if (isVideo(f)) {
-        viewerImage.hidden = true;
-        viewerFrame.hidden = false;
-        var watchSrc = withToken('/watch/' + encodeURIComponent(f.id));
-        watchSrc += (watchSrc.indexOf('?') >= 0 ? '&' : '?') + 'embed=1';
-        viewerFrame.src = watchSrc;
-      } else if (isImage(f)) {
-        viewerFrame.src = 'about:blank';
-        viewerFrame.hidden = true;
-        viewerImage.hidden = false;
-        viewerImage.src = withToken('/file/' + encodeURIComponent(f.id));
-        viewerImage.alt = f.name;
-      }
-    }
-
-    if (!showView) {
+    } else {
       noPreviewExt.textContent = f.ext;
     }
   }
 
+  function showImageAtIndex(idx) {
+    if (!imageFiles.length) return;
+    imageIndex = (idx + imageFiles.length) % imageFiles.length;
+    var f = imageFiles[imageIndex];
+    imageActualSize = false;
+    imageViewerTitle.textContent = f.name;
+    imageViewerImg.src = withToken('/file/' + encodeURIComponent(f.id));
+    imageViewerImg.alt = f.name;
+    imageViewerImg.classList.remove('actual-size');
+    imageViewerDownload.href = fileUrl(f.id, true);
+    imageViewerDownload.setAttribute('download', f.name);
+    var multi = imageFiles.length > 1;
+    imageNavPrev.hidden = !multi;
+    imageNavNext.hidden = !multi;
+    imageViewer.hidden = false;
+    document.body.style.overflow = 'hidden';
+    imageViewerClose.focus();
+  }
+
+  function closeImageViewer() {
+    imageViewer.hidden = true;
+    imageViewerImg.removeAttribute('src');
+    document.body.style.overflow = '';
+    if (lastFocus && lastFocus.focus) lastFocus.focus();
+  }
+
+  function openImageViewer(f) {
+    rebuildImageList();
+    var idx = imageFiles.findIndex(function (item) { return item.id === f.id; });
+    showImageAtIndex(idx >= 0 ? idx : 0);
+  }
+
   btnClose.addEventListener('click', closeModal);
   btnBackdrop.addEventListener('click', closeModal);
-  btnBack.addEventListener('click', function () {
-    stopPlayback();
-    viewing = false;
-    updateModal();
-    btnView.focus();
-  });
   btnView.addEventListener('click', function () {
-    viewing = true;
-    updateModal();
+    if (!selected) return;
     if (isVideo(selected)) {
-      viewerFrame.focus();
-    } else {
-      viewerImage.focus();
+      window.location.href = withToken('/watch/' + encodeURIComponent(selected.id));
+      return;
+    }
+    if (isImage(selected)) {
+      var imgFile = selected;
+      closeModal();
+      openImageViewer(imgFile);
+    }
+  });
+
+  imageViewerClose.addEventListener('click', closeImageViewer);
+  imageNavPrev.addEventListener('click', function () { showImageAtIndex(imageIndex - 1); });
+  imageNavNext.addEventListener('click', function () { showImageAtIndex(imageIndex + 1); });
+  imageViewerImg.addEventListener('click', function () {
+    imageActualSize = !imageActualSize;
+    imageViewerImg.classList.toggle('actual-size', imageActualSize);
+    if (!imageActualSize) {
+      imageViewerStage.scrollTop = 0;
+      imageViewerStage.scrollLeft = 0;
     }
   });
 
   document.addEventListener('keydown', function (e) {
+    if (!imageViewer.hidden) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeImageViewer();
+        return;
+      }
+      if (e.key === 'ArrowLeft' && !imageNavPrev.hidden) {
+        e.preventDefault();
+        showImageAtIndex(imageIndex - 1);
+        return;
+      }
+      if (e.key === 'ArrowRight' && !imageNavNext.hidden) {
+        e.preventDefault();
+        showImageAtIndex(imageIndex + 1);
+        return;
+      }
+    }
     if (e.key === 'Escape' && !modal.hidden) {
       e.preventDefault();
       closeModal();

@@ -4,11 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Video</title>
-<script>
-if (new URLSearchParams(window.location.search).get('embed') === '1') {
-  document.documentElement.classList.add('embed');
-}
-</script>
 <link rel="stylesheet" href="/player/player.css">
 </head>
 <body>
@@ -32,8 +27,12 @@ if (new URLSearchParams(window.location.search).get('embed') === '1') {
     <button id="audio-prep-cancel" class="ctrl prep-cancel" type="button" hidden>Continue with current track</button>
   </div>
   <div id="top-bar">
+    <div class="top-bar-nav">
+      <a id="back-to-files" class="ctrl back-link" href="/">← Back to files</a>
+    </div>
     <div class="top-bar-selects">
       <select id="audio-select" class="ctrl" aria-label="Audio track" hidden></select>
+      <span id="audio-none" class="ctrl audio-none" hidden>No audio</span>
       <select id="captions-select" class="ctrl" aria-label="Captions" hidden>
         <option value="off">Captions</option>
       </select>
