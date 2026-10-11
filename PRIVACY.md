@@ -51,7 +51,7 @@ Privacy questions (draft): **solocrew.me@gmail.com**
 
 ## Governing law
 
-This draft is intended to be governed by the laws of **&lt;JURISDICTION&gt;** once finalized.
+This draft is intended to be governed by the laws of **India (Kerala)** once finalized.
 
 ## Changes
 
