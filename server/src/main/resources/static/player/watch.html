@@ -27,25 +27,29 @@
     <button id="audio-prep-cancel" class="ctrl prep-cancel" type="button" hidden>Continue with current track</button>
   </div>
   <div id="top-bar">
-    <select id="audio-select" class="ctrl" aria-label="Audio track" hidden></select>
-    <select id="captions-select" class="ctrl" aria-label="Captions" hidden>
-      <option value="off">Captions</option>
-    </select>
-    <span id="captions-notice" class="captions-notice" hidden></span>
-    <select id="speed-select" class="ctrl" aria-label="Playback speed">
-      <option value="0.5">0.5x</option>
-      <option value="1" selected>1x</option>
-      <option value="1.25">1.25x</option>
-      <option value="1.5">1.5x</option>
-      <option value="2">2x</option>
-    </select>
-    <button id="btn-chapters" class="ctrl" type="button" aria-label="Chapters" title="Chapters">
-      <svg viewBox="0 0 24 24"><path d="M4 4h7v7H4V4zm9 0h7v7h-7V4zM4 13h7v7H4v-7zm9 0h7v7h-7v-7z"/></svg>
-      <span>Chapters</span>
-    </button>
-    <button id="btn-fullscreen" class="ctrl" type="button" aria-label="Fullscreen">
-      <svg viewBox="0 0 24 24"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
-    </button>
+    <div class="top-bar-selects">
+      <select id="audio-select" class="ctrl" aria-label="Audio track" hidden></select>
+      <select id="captions-select" class="ctrl" aria-label="Captions" hidden>
+        <option value="off">Captions</option>
+      </select>
+      <span id="captions-notice" class="captions-notice" hidden></span>
+    </div>
+    <div class="top-bar-actions">
+      <select id="speed-select" class="ctrl" aria-label="Playback speed">
+        <option value="0.5">0.5x</option>
+        <option value="1" selected>1x</option>
+        <option value="1.25">1.25x</option>
+        <option value="1.5">1.5x</option>
+        <option value="2">2x</option>
+      </select>
+      <button id="btn-chapters" class="ctrl" type="button" aria-label="Chapters" title="Chapters">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4V4zm9 0h7v7h-7V4zM4 13h7v7H4v-7zm9 0h7v7h-7v-7z"/></svg>
+        <span class="chapters-label">Chapters</span>
+      </button>
+      <button id="btn-fullscreen" class="ctrl" type="button" aria-label="Fullscreen">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
+      </button>
+    </div>
   </div>
   <div id="bottom-bar">
     <div id="seek-wrap">

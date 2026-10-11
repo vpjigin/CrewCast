@@ -14,6 +14,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;color:#fff;
   transition:opacity .3s,transform .3s;pointer-events:none}
 #top-bar{top:0;display:flex;justify-content:flex-end;align-items:center;gap:10px;
   padding:12px 14px;background:linear-gradient(to bottom,rgba(0,0,0,.75),transparent)}
+.top-bar-selects,.top-bar-actions{display:contents}
 #bottom-bar{bottom:0;padding:10px 14px max(10px,env(safe-area-inset-bottom));
   background:linear-gradient(to top,rgba(0,0,0,.85),transparent)}
 #player.controls-hidden #top-bar,#player.controls-hidden #bottom-bar{
@@ -66,6 +67,20 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;color:#fff;
 #audio-prep-cancel.prep-cancel{pointer-events:auto;font-size:14px;padding:0 16px}
 #btn-chapters{gap:6px;font-size:14px;padding:0 10px}
 #btn-chapters svg{width:20px;height:20px;flex-shrink:0}
+#btn-fullscreen{padding:0 11px}
+@media(max-width:600px){
+  #top-bar{flex-direction:column;align-items:stretch;gap:8px;padding:10px 10px max(10px,env(safe-area-inset-top));
+    overflow-x:hidden;max-width:100vw}
+  .top-bar-selects{display:flex;flex-wrap:wrap;align-items:center;gap:8px;width:100%;min-width:0}
+  .top-bar-actions{display:flex;flex-wrap:nowrap;align-items:center;justify-content:flex-end;gap:8px;
+    width:100%;min-width:0;flex-shrink:0}
+  #top-bar .ctrl{min-height:40px}
+  #audio-select,#captions-select{flex:1 1 120px;min-width:120px;max-width:none;width:auto}
+  #speed-select{flex:0 0 auto;width:auto;min-width:72px;max-width:none}
+  #btn-chapters,#btn-fullscreen{flex:0 0 auto;flex-shrink:0;width:44px;min-width:44px;padding:0}
+  #btn-chapters .chapters-label{display:none}
+  .captions-notice{flex:1 1 100%;max-width:none;text-align:left}
+}
 #chapter-overlay{position:fixed;inset:0;z-index:20;background:rgba(0,0,0,.96);
   display:none;flex-direction:column;padding:14px 14px max(14px,env(safe-area-inset-bottom));
   padding-top:max(14px,env(safe-area-inset-top))}
