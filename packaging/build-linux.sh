@@ -29,7 +29,7 @@ echo "==> Maven build"
 packaging_maven_build "$ROOT"
 
 JAR="$(packaging_desktop_jar "$ROOT")"
-[[ -f "$JAR" ]] || packaging_die "Runnable jar not found: $JAR"
+echo "==> Desktop jar: ${JAR}"
 
 bash "${ROOT}/packaging/generate-artwork.sh"
 ICON="${ROOT}/packaging/linux/crewcast.png"

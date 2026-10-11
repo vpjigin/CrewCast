@@ -6,20 +6,53 @@ function Die($msg) {
     exit 1
 }
 
+function Invoke-Native {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Command
+    )
+    $exe = $Command[0]
+    $args = @()
+    if ($Command.Length -gt 1) {
+        $args = $Command[1..($Command.Length - 1)]
+    }
+    & $exe @args
+    if ($LASTEXITCODE -ne 0) {
+        Die ("Command failed ({0}): {1}" -f $LASTEXITCODE, ($Command -join " "))
+    }
+}
+
 $Root = Split-Path -Parent $PSScriptRoot
 if (-not (Test-Path "$Root/pom.xml")) {
     Die "Could not locate repo root from $PSScriptRoot"
 }
 
+function Get-MavenVersionFromPom {
+    [xml]$pom = Get-Content -Path (Join-Path $Root "pom.xml") -Raw
+    $ver = $pom.project.version
+    if ([string]::IsNullOrWhiteSpace($ver) -and $null -ne $pom.project.parent) {
+        $ver = $pom.project.parent.version
+    }
+    if ([string]::IsNullOrWhiteSpace($ver)) {
+        Die "Could not read project.version from pom.xml"
+    }
+    $ver = [string]$ver
+    $ver = $ver -replace "-SNAPSHOT$", ""
+    $ver = $ver.Trim()
+    if ($ver -notmatch "^\d+(\.\d+){0,2}$") {
+        $trunc = $ver
+        if ($trunc.Length -gt 80) { $trunc = $trunc.Substring(0, 80) }
+        Die "Invalid Maven version from pom.xml: '$trunc'"
+    }
+    return $ver
+}
+
 function Get-MavenVersion {
-    Push-Location $Root
-    $v = & mvn -q -DforceStdout help:evaluate -Dexpression=project.version
-    Pop-Location
-    return ($v -replace "-SNAPSHOT$", "")
+    return Get-MavenVersionFromPom
 }
 
 function Get-ResolvedVersion {
-    $fallback = Get-MavenVersion
+    $fallback = Get-MavenVersionFromPom
     $envVal = $env:CREWCAST_RELEASE_VERSION
     if ([string]::IsNullOrWhiteSpace($envVal)) {
         Write-Warning "No valid CREWCAST_RELEASE_VERSION; using Maven fallback $fallback."
@@ -47,18 +80,27 @@ function Get-TripleVersion([string]$raw) {
     return "1.0.0"
 }
 
-function Get-MacosAppVersion([string]$raw) {
-    if ($raw -match "^(\d+)") {
-        $major = [int]$Matches[1]
-        if ($major -lt 1) { return "1.0.0" }
+function Find-DesktopJar {
+    $dir = Join-Path $Root "desktop/target"
+    $candidates = Get-ChildItem -Path $dir -Filter "crewcast-desktop-*.jar" -File -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.Name -notmatch '\.original$' -and
+            $_.Name -notmatch '-sources\.jar$' -and
+            $_.Name -notmatch '-javadoc\.jar$'
+        }
+    if ($candidates.Count -ne 1) {
+        $names = @($candidates | ForEach-Object { $_.FullName })
+        if ($names.Count -eq 0) { $names = @("(none)") }
+        Die ("Expected exactly one crewcast-desktop jar in {0}; found: {1}" -f $dir, ($names -join ", "))
     }
-    return $raw
+    return $candidates[0].FullName
 }
 
 # Fixed upgrade code for in-place MSI upgrades (do not change between releases).
 $WinUpgradeUuid = "8f3e2a1b-5c4d-4e9f-a2b1-6d7e8f9a0bcd"
 
-$javaVer = (& java -version 2>&1 | Select-Object -First 1)
+$javaVerLines = & java -version 2>&1
+$javaVer = ($javaVerLines | Select-Object -First 1) -join " "
 if ($javaVer -notmatch 'version "(\d+)') { Die "JDK 21+ required." }
 if ([int]$Matches[1] -lt 21) { Die "JDK 21+ required (found $($Matches[1]))." }
 
@@ -72,14 +114,16 @@ Write-Host "==> Version: raw=$rawVersion jpackage=$appVersion"
 
 Write-Host "==> Maven build"
 Push-Location $Root
-& mvn -pl desktop -am package -DskipTests
-if ($LASTEXITCODE -ne 0) { Die "Maven build failed" }
-$mvnVersion = & mvn -q -DforceStdout help:evaluate -Dexpression=project.version
-$jar = Join-Path $Root "desktop/target/crewcast-desktop-$mvnVersion.jar"
-Pop-Location
-if (-not (Test-Path $jar)) { Die "Jar not found: $jar" }
+try {
+    Invoke-Native @("mvn", "-pl", "desktop", "-am", "package", "-DskipTests")
+} finally {
+    Pop-Location
+}
 
-& python "$Root/packaging/tools/generate_icons.py"
+$jar = Find-DesktopJar
+Write-Host "==> Desktop jar: $jar"
+
+Invoke-Native @("python", (Join-Path $Root "packaging/tools/generate_icons.py"))
 $icon = Join-Path $Root "packaging/windows/Crewcast.ico"
 if (-not (Test-Path $icon)) { Die "Missing icon: $icon" }
 
@@ -92,45 +136,50 @@ Copy-Item $jar $inputDir
 
 Write-Host "==> jdeps + jlink"
 $tmp = New-TemporaryFile | ForEach-Object { Remove-Item $_; New-Item -ItemType Directory -Path $_.FullName }
-Push-Location $tmp
-& jar xf $jar
-Pop-Location
-$cp = Join-Path $tmp "BOOT-INF/classes"
-$libs = Join-Path $tmp "BOOT-INF/lib/*"
-$jdepsOut = & jdeps --ignore-missing-deps --multi-release 21 --recursive --print-module-deps `
-    --class-path "$cp;$libs" $cp 2>$null
-Remove-Item -Recurse -Force $tmp
+try {
+    Push-Location $tmp
+    Invoke-Native @("jar", "xf", $jar)
+    Pop-Location
+    $cp = Join-Path $tmp "BOOT-INF/classes"
+    $libs = Join-Path $tmp "BOOT-INF/lib/*"
+    $jdepsFile = Join-Path $tmp "jdeps-out.txt"
+    & jdeps --ignore-missing-deps --multi-release 21 --recursive --print-module-deps `
+        --class-path "$cp;$libs" $cp 2>$null | Out-File -FilePath $jdepsFile -Encoding ascii
+    if ($LASTEXITCODE -ne 0) { Die "jdeps failed ($LASTEXITCODE)" }
+    $jdepsOut = (Get-Content -Path $jdepsFile -Raw).Trim()
+} finally {
+    Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+}
 $mandatory = "java.desktop,java.logging,java.naming,java.management,java.sql,java.xml,jdk.unsupported,jdk.crypto.ec"
 $allModules = ($jdepsOut + "," + $mandatory).Split(",") | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Sort-Object -Unique
 $moduleList = $allModules -join ","
 Write-Host "    modules: $moduleList"
 
 Remove-Item -Recurse -Force $runtime -ErrorAction SilentlyContinue
-& jlink --output $runtime --add-modules $moduleList --strip-debug --no-header-files --no-man-pages --compress=2
-if ($LASTEXITCODE -ne 0) { Die "jlink failed" }
+Invoke-Native @("jlink", "--output", $runtime, "--add-modules", $moduleList, "--strip-debug", "--no-header-files", "--no-man-pages", "--compress=2")
 
 $out = Join-Path $Root "dist/Crewcast-windows-x64.msi"
 Remove-Item -Force $out -ErrorAction SilentlyContinue
 
-Write-Host "==> jpackage (msi)"
-& jpackage `
-    --type msi `
-    --dest (Join-Path $Root "dist") `
-    --name Crewcast `
-    --app-version $appVersion `
-    --vendor Solocrew `
-    --copyright "Copyright (c) 2026 Solocrew" `
-    --icon $icon `
-    --input $inputDir `
-    --main-jar (Split-Path -Leaf $jar) `
-    --main-class org.springframework.boot.loader.launch.JarLauncher `
-    --runtime-image $runtime `
-    --win-menu `
-    --win-shortcut `
-    --win-dir-chooser `
-    --win-upgrade-uuid $WinUpgradeUuid
-
-if ($LASTEXITCODE -ne 0) { Die "jpackage failed" }
+Write-Host "==> jpackage (msi) app-version=$appVersion main-jar=$((Split-Path -Leaf $jar))"
+Invoke-Native @(
+    "jpackage",
+    "--type", "msi",
+    "--dest", (Join-Path $Root "dist"),
+    "--name", "Crewcast",
+    "--app-version", $appVersion,
+    "--vendor", "Solocrew",
+    "--copyright", "Copyright (c) 2026 Solocrew",
+    "--icon", $icon,
+    "--input", $inputDir,
+    "--main-jar", (Split-Path -Leaf $jar),
+    "--main-class", "org.springframework.boot.loader.launch.JarLauncher",
+    "--runtime-image", $runtime,
+    "--win-menu",
+    "--win-shortcut",
+    "--win-dir-chooser",
+    "--win-upgrade-uuid", $WinUpgradeUuid
+)
 
 $candidates = @(
     (Join-Path $Root "dist/Crewcast-$appVersion.msi"),

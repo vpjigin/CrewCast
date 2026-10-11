@@ -13,9 +13,78 @@ packaging_require_cmd() {
   command -v "$1" >/dev/null 2>&1 || packaging_die "Missing required command: $1"
 }
 
+packaging_assert_numeric_version() {
+  local label="$1"
+  local v="$2"
+  if [[ ! "$v" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
+    local trunc="${v:0:80}"
+    packaging_die "Invalid ${label} version '${trunc}' (expected numeric major[.minor[.patch]])."
+  fi
+}
+
 packaging_maven_version() {
   local root="$1"
-  (cd "$root" && mvn -q -DforceStdout help:evaluate -Dexpression=project.version) | sed 's/-SNAPSHOT$//'
+  local pom="${root}/pom.xml"
+  [[ -f "$pom" ]] || packaging_die "Missing pom.xml: ${pom}"
+  local v
+  v="$(python3 - "${pom}" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+NS = "{http://maven.apache.org/POM/4.0.0}"
+pom = ET.parse(sys.argv[1])
+project = pom.getroot()
+
+def text_version(node):
+    if node is None:
+        return None
+    for tag in (NS + "version", "version"):
+        el = node.find(tag)
+        if el is not None and el.text and el.text.strip():
+            return el.text.strip()
+    return None
+
+ver = text_version(project)
+if not ver:
+    parent = project.find(NS + "parent")
+    if parent is None:
+        parent = project.find("parent")
+    ver = text_version(parent)
+if not ver:
+    raise SystemExit("no version element")
+ver = re.sub(r"-SNAPSHOT$", "", ver)
+if not re.fullmatch(r"[0-9]+(\.[0-9]+){0,2}", ver):
+    print(ver[:80], file=sys.stderr)
+    raise SystemExit(2)
+print(ver)
+PY
+)" || packaging_die "Could not read project version from ${pom}"
+  packaging_assert_numeric_version "Maven" "$v"
+  echo "$v"
+}
+
+packaging_desktop_jar() {
+  local root="$1"
+  local dir="${root}/desktop/target"
+  local -a matches=()
+  local f
+  shopt -s nullglob
+  for f in "${dir}"/crewcast-desktop-*.jar; do
+    case "$f" in
+      *.original | *-sources.jar | *-javadoc.jar) continue ;;
+    esac
+    matches+=("$f")
+  done
+  shopt -u nullglob
+  if (( ${#matches[@]} != 1 )); then
+    local listed="(none)"
+    if (( ${#matches[@]} > 0 )); then
+      listed="${matches[*]}"
+    fi
+    packaging_die "Expected exactly one crewcast-desktop jar in ${dir}; found: ${listed}"
+  fi
+  echo "${matches[0]}"
 }
 
 # jpackage-safe numeric version: CREWCAST_RELEASE_VERSION if valid, else Maven (with warning).
@@ -71,13 +140,6 @@ packaging_app_version_triple() {
 packaging_maven_build() {
   local root="$1"
   (cd "$root" && mvn -pl desktop -am package -DskipTests)
-}
-
-packaging_desktop_jar() {
-  local root="$1"
-  local mvn_version
-  mvn_version="$(cd "$root" && mvn -q -DforceStdout help:evaluate -Dexpression=project.version)"
-  echo "${root}/desktop/target/crewcast-desktop-${mvn_version}.jar"
 }
 
 packaging_discover_modules() {
