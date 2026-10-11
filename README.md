@@ -50,6 +50,21 @@ Add folders or files in the UI, configure playback options in the left panel, th
 
 ---
 
+## Build an installer (macOS)
+
+On a Mac with **JDK 21+** (including `jlink` and `jpackage`):
+
+```bash
+chmod +x packaging/build-macos.sh packaging/macos/generate-icns.sh
+./packaging/build-macos.sh
+```
+
+This produces `dist/Crewcast-<version>-macos-<arch>.dmg` (for example `dist/Crewcast-0.0.1-macos-arm64.dmg`) containing **Crewcast.app** and a bundled Java 21 runtime. End users do not need Java or Maven installed. App data is still stored only in `~/.crewcast/`, not inside the app bundle.
+
+The build is **unsigned**. On first launch, macOS Gatekeeper may block the app — use **right-click → Open**, or **System Settings → Privacy & Security → Open Anyway**.
+
+---
+
 ## How sharing works
 
 | Link | What it is |
