@@ -88,6 +88,8 @@ Installers are **unsigned**. **macOS** Gatekeeper and **Windows** SmartScreen ma
 
 ## How sharing works
 
+Shared folders expose **every file type** for download; the web library can **view photos and videos in the browser** only — other types download to the device. **Hidden files** (names starting with `.`, OS-hidden, `.git`, `node_modules`, and junk like `.DS_Store`) are skipped when scanning folders.
+
 | Link | What it is |
 |------|------------|
 | **Public** | `https://….trycloudflare.com/?t=…` — HTTPS through Cloudflare’s Quick Tunnel to your computer |
@@ -175,7 +177,7 @@ Dark-themed full-screen player at `/watch/{id}`:
 - **Chapters** — grid of thumbnails across the timeline (count from Settings, default 20); first open may take a few seconds while frames are captured
 - Controls auto-hide while playing; tap or move the pointer to show them again
 
-Home page `/` lists shared videos (requires a valid access key when sharing is on and the key is required).
+Home page `/` lists all shared files in a grid (requires a valid access key when sharing is on and the key is required). Tap a file for preview, download, or in-browser viewing of images and videos.
 
 ---
 
@@ -245,7 +247,9 @@ Data directory: `~/.crewcast/` (settings, cache, optional `bin/` for cloudflared
 
 | Endpoint | Purpose |
 |----------|---------|
-| `GET /` | Home page (video list) |
+| `GET /` | Home page (shared file grid) |
+| `GET /api/files` | JSON list of shared files (kind, size, modified time) |
+| `GET /file/{id}?download=1` | Download a shared file (`Content-Disposition: attachment`) |
 | `GET /watch/{id}` | Player page |
 | `GET /stream/{id}` | Range-request video stream (`?audio=N`, `?t=` when required) |
 | `GET /api/videos` | JSON list `{ id, title }` |
