@@ -31,5 +31,6 @@ jobs:
           java-version: "21"
           cache: maven
 
+      # GitHub runners have no ffmpeg/Playwright; e2e tests need both locally before release.
       - name: Verify
-        run: mvn -B verify
+        run: mvn -B verify -DexcludedGroups=e2e

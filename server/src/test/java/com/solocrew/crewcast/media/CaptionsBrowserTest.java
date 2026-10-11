@@ -18,9 +18,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@E2eFfmpegRequired
 class CaptionsBrowserTest extends CrewcastSpringTestBase {
 
     private static SubtitleFixture.Bundle fixture;
@@ -39,7 +39,6 @@ class CaptionsBrowserTest extends CrewcastSpringTestBase {
 
     @BeforeEach
     void setup() throws Exception {
-        assumeTrue(AudioFixIntegrationTest.ffmpegAvailable(), "ffmpeg not on PATH");
         if (fixture == null) {
             fixture = SubtitleFixture.create();
         }

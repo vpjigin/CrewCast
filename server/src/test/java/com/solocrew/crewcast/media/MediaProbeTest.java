@@ -3,30 +3,21 @@ package com.solocrew.crewcast.media;
 import com.solocrew.crewcast.support.CrewcastSpringTestBase;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+@E2eFfmpegRequired
 class MediaProbeTest extends CrewcastSpringTestBase {
 
     private static Path fixture;
 
     @BeforeAll
     static void buildFixture() throws Exception {
-        assumeTrue(commandExists("ffmpeg"), "ffmpeg not on PATH");
         fixture = MediaTestFixtures.coverArt();
-    }
-
-    static boolean commandExists(String name) {
-        try {
-            Process p = new ProcessBuilder(name, "-version").redirectErrorStream(true).start();
-            return p.waitFor() == 0;
-        } catch (Exception e) {
-            return false;
-        }
     }
 
     @Test

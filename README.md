@@ -135,11 +135,7 @@ When **Fix audio for browsers** is enabled, Crewcast converts non-browser audio 
 - **Headless:** `--download-ffmpeg` before sharing
 - **Manual install:** `brew install ffmpeg`, `winget install ffmpeg`, `apt install ffmpeg`, etc., then **Re-check ffmpeg** in Settings
 
-**Tests:** `mvn -pl server test` does **not** download ffmpeg. Optional real-download test:
-
-```bash
-mvn -pl server test -Dcrewcast.ffmpeg.e2e=true
-```
+See [Development → Tests](#development) for the full test matrix (CI vs local e2e).
 
 ### Cache and playback
 
@@ -241,6 +237,34 @@ Data directory: `~/.crewcast/` (settings, cache, optional `bin/` for cloudflared
 | `GET /subtitles/{id}/{index}.vtt` | WebVTT captions (UTF-8) |
 
 When sharing is off, protected routes respond with **503**. When **Require private key** is on, missing or wrong `t` yields **403** (except configured LAN bypass).
+
+---
+
+## Development
+
+### Tests
+
+CI runs unit/integration tests only (no ffmpeg or Playwright on the runner):
+
+```bash
+mvn -B verify -DexcludedGroups=e2e
+```
+
+Before a release, run the **e2e** suite locally (needs **ffmpeg** and **ffprobe** on `PATH`, plus Playwright Chromium — install once with `mvn exec:java -pl server -e -D exec.mainClass=com.microsoft.playwright.CLI -D exec.args="install chromium"`):
+
+```bash
+mvn -pl server test
+# or e2e only:
+mvn -pl server test -Dgroups=e2e
+```
+
+Plain `mvn -pl server test` does **not** download ffmpeg. Optional real-download test (network, macOS):
+
+```bash
+mvn -pl server test -Dgroups=e2e -Dcrewcast.ffmpeg.e2e=true
+```
+
+Without ffmpeg, e2e classes are **skipped** (not errors). With `-DexcludedGroups=e2e`, they are not loaded at all (same as CI).
 
 ---
 

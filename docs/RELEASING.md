@@ -13,14 +13,19 @@ Set **`CREWCAST_RELEASE_VERSION`** (optional locally) to the tag without forcing
 
 ## Cut a release (tag)
 
-1. Ensure **`main`** (or your release branch) passes CI (`mvn -B verify`).
-2. Choose a tag **`v*`** (example: `v1.0.0`). Tags with a **hyphen** (example: `v1.0.0-rc1`) are published as **GitHub prereleases**.
-3. Create and push the tag:
+1. Ensure **`main`** (or your release branch) passes CI (`mvn -B verify -DexcludedGroups=e2e`).
+2. Run **e2e tests locally** before tagging (ffmpeg + ffprobe on `PATH`, Playwright Chromium installed):
+   ```bash
+   mvn -pl server test -Dgroups=e2e
+   ```
+   Full server suite: `mvn -pl server test`. Optional ffmpeg download smoke test: add `-Dcrewcast.ffmpeg.e2e=true` (macOS, network).
+3. Choose a tag **`v*`** (example: `v1.0.0`). Tags with a **hyphen** (example: `v1.0.0-rc1`) are published as **GitHub prereleases**.
+4. Create and push the tag:
    ```bash
    git tag v1.0.0
    git push origin v1.0.0
    ```
-4. The **Release** workflow builds all four installers, writes **`SHA256SUMS.txt`**, and creates a **GitHub Release** for that tag (not a draft).
+5. The **Release** workflow builds all four installers, writes **`SHA256SUMS.txt`**, and creates a **GitHub Release** for that tag (not a draft).
 
 ## Dry run (no release published)
 

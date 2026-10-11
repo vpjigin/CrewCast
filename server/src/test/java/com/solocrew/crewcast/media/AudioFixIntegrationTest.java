@@ -7,7 +7,6 @@ import com.solocrew.crewcast.share.ShareRegistry;
 import com.solocrew.crewcast.support.CrewcastSpringTestBase;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIf;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -18,8 +17,6 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.concurrent.TimeUnit;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -29,6 +26,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest(properties = "server.port=0")
 @AutoConfigureMockMvc
+@E2eFfmpegRequired
 class AudioFixIntegrationTest extends CrewcastSpringTestBase {
 
     private static Path fixture;
@@ -49,24 +47,10 @@ class AudioFixIntegrationTest extends CrewcastSpringTestBase {
 
     @DynamicPropertySource
     static void fixtures(DynamicPropertyRegistry registry) throws Exception {
-        assumeFfmpeg();
         if (fixture == null) {
             fixture = MediaTestFixtures.coverArt();
         }
         videoId = ShareRegistry.idForPath(fixture);
-    }
-
-    public static boolean ffmpegAvailable() {
-        try {
-            Process p = new ProcessBuilder("ffmpeg", "-version").start();
-            return p.waitFor(5, TimeUnit.SECONDS) && p.exitValue() == 0;
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
-    private static void assumeFfmpeg() {
-        org.junit.jupiter.api.Assumptions.assumeTrue(ffmpegAvailable(), "ffmpeg not on PATH");
     }
 
     @org.junit.jupiter.api.AfterEach

@@ -17,12 +17,12 @@ import java.nio.file.Path;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
 @AutoConfigureMockMvc
+@E2eFfmpegRequired
 class SubtitlePipelineTest extends CrewcastSpringTestBase {
 
     private static SubtitleFixture.Bundle fixture;
@@ -43,7 +43,6 @@ class SubtitlePipelineTest extends CrewcastSpringTestBase {
 
     @BeforeAll
     static void build() throws Exception {
-        assumeTrue(MediaProbeTest.commandExists("ffmpeg"), "ffmpeg not on PATH");
         fixture = SubtitleFixture.create();
     }
 

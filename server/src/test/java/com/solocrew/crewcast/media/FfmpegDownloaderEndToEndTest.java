@@ -7,7 +7,9 @@ import com.solocrew.crewcast.settings.SettingsStore;
 import com.solocrew.crewcast.share.ShareRegistry;
 import com.solocrew.crewcast.support.CrewcastSpringTestBase;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIf;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
@@ -21,6 +23,10 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * Downloads real ffmpeg into isolated {@code crewcast.home} (network + ~50–180 MB).
  * <p><b>Opt-in only:</b> run with {@code -Dcrewcast.ffmpeg.e2e=true}. Plain {@code mvn test} skips this.
  */
+@Tag("e2e")
+@EnabledIf(
+        value = "com.solocrew.crewcast.media.FfmpegTestSupport#ffmpegDownloadE2eEnabled",
+        disabledReason = "Opt-in only — enable with -Dcrewcast.ffmpeg.e2e=true")
 @SpringBootTest(properties = "server.port=0")
 class FfmpegDownloaderEndToEndTest extends CrewcastSpringTestBase {
 
@@ -39,9 +45,6 @@ class FfmpegDownloaderEndToEndTest extends CrewcastSpringTestBase {
 
     @BeforeEach
     void cleanBin() throws Exception {
-        assumeTrue(
-                Boolean.getBoolean("crewcast.ffmpeg.e2e"),
-                "Opt-in only — enable with -Dcrewcast.ffmpeg.e2e=true");
         Path bin = isolatedHome().resolve("bin");
         if (Files.isDirectory(bin)) {
             try (var walk = Files.walk(bin)) {

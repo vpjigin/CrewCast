@@ -27,7 +27,6 @@ import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -35,6 +34,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
+@E2eFfmpegRequired
 class OnDemandAudioBrowserTest extends CrewcastSpringTestBase {
 
     private static Path fixture;
@@ -57,7 +57,6 @@ class OnDemandAudioBrowserTest extends CrewcastSpringTestBase {
 
     @DynamicPropertySource
     static void props(DynamicPropertyRegistry registry) throws Exception {
-        assumeTrue(AudioFixIntegrationTest.ffmpegAvailable(), "ffmpeg not on PATH");
         System.setProperty("crewcast.audio.idle-cancel-ms", "3000");
         if (fixture == null) {
             fixture = MediaTestFixtures.coverArt();

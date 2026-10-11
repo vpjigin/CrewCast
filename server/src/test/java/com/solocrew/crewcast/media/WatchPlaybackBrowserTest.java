@@ -29,9 +29,9 @@ import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@E2eFfmpegRequired
 class WatchPlaybackBrowserTest extends CrewcastSpringTestBase {
 
     private static Path hevcFixture;
@@ -53,7 +53,6 @@ class WatchPlaybackBrowserTest extends CrewcastSpringTestBase {
 
     @DynamicPropertySource
     static void fixtures(DynamicPropertyRegistry registry) throws Exception {
-        assumeTrue(AudioFixIntegrationTest.ffmpegAvailable(), "ffmpeg not on PATH");
         if (hevcFixture == null) {
             hevcFixture = MediaTestFixtures.coverArt();
         }
