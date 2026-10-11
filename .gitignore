@@ -1,5 +1,10 @@
 # Build output
 target/
+dist/
+
+# macOS packaging scratch
+packaging/macos/build/
+packaging/macos/Crewcast.iconset/
 
 # IDE
 .idea/
