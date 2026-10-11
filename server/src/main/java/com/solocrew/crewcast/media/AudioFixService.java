@@ -213,6 +213,9 @@ public class AudioFixService {
             return true;
         }
         ProbedMedia media = probe(source);
+        if (media.audioTracks().isEmpty()) {
+            return true;
+        }
         if (BrowserPlayback.canServeOriginal(source, media, audioIndex)) {
             return true;
         }
@@ -244,6 +247,9 @@ public class AudioFixService {
             return new AudioFixStatus(AudioFixJobState.READY, 100, "Ready", key);
         }
         ProbedMedia media = probe(source);
+        if (media.audioTracks().isEmpty()) {
+            return new AudioFixStatus(AudioFixJobState.READY, 100, "Ready", key);
+        }
         if (BrowserPlayback.canServeOriginal(source, media, audioIndex)) {
             return new AudioFixStatus(AudioFixJobState.READY, 100, "Ready", key);
         }
@@ -255,6 +261,9 @@ public class AudioFixService {
             return statusFor(source, audioIndex);
         }
         ProbedMedia media = probe(source);
+        if (media.audioTracks().isEmpty()) {
+            return new AudioFixStatus(AudioFixJobState.READY, 100, "Ready", jobKey(source, audioIndex));
+        }
         if (BrowserPlayback.canServeOriginal(source, media, audioIndex)) {
             return new AudioFixStatus(AudioFixJobState.READY, 100, "Ready", jobKey(source, audioIndex));
         }
@@ -355,6 +364,9 @@ public class AudioFixService {
     public ServeResult resolvePlayback(Path source, int audioIndex) throws IOException, InterruptedException {
         AppSettings settings = settingsStore.getSettings();
         ProbedMedia media = probe(source);
+        if (media.audioTracks().isEmpty()) {
+            return new ServeResult(Optional.of(source), true, statusFor(source, audioIndex));
+        }
         if (!settings.isFixAudioForBrowsers() || !ffmpegManager.isAvailable()) {
             return new ServeResult(Optional.of(source), true, statusFor(source, audioIndex));
         }
@@ -366,6 +378,9 @@ public class AudioFixService {
             touch(cached);
             return new ServeResult(Optional.of(cached), false,
                     new AudioFixStatus(AudioFixJobState.READY, 100, "Ready", jobKey(source, audioIndex)));
+        }
+        if (audioIndex < 0 || media.audioByRelativeIndex(audioIndex).isEmpty()) {
+            return new ServeResult(Optional.of(source), true, statusFor(source, audioIndex));
         }
         return new ServeResult(Optional.empty(), false, statusFor(source, audioIndex));
     }
