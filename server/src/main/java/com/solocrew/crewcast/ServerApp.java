@@ -4,6 +4,8 @@ import com.solocrew.crewcast.facade.SharingLinks;
 import com.solocrew.crewcast.facade.SharingService;
 import com.solocrew.crewcast.facade.SharingUiListener;
 import com.solocrew.crewcast.facade.TunnelState;
+import com.solocrew.crewcast.system.CrewcastBootstrap;
+import com.solocrew.crewcast.system.CrewcastDiagnostics;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
 
@@ -19,13 +21,16 @@ public final class ServerApp {
     }
 
     public static void main(String[] args) throws Exception {
+        CrewcastBootstrap.init();
         List<String> sharePaths = new ArrayList<>();
         Integer port = null;
         boolean noTunnel = false;
         boolean downloadFfmpeg = false;
+        boolean diagnose = false;
 
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
+                case "--diagnose" -> diagnose = true;
                 case "--download-ffmpeg" -> downloadFfmpeg = true;
                 case "--share" -> {
                     if (i + 1 < args.length) {
@@ -43,8 +48,14 @@ public final class ServerApp {
             }
         }
 
+        if (diagnose) {
+            System.out.println(CrewcastDiagnostics.runReport());
+            return;
+        }
+
         if (sharePaths.isEmpty()) {
-            System.err.println("Usage: ServerApp --share <path> [--share <path> ...] [--port N] [--no-tunnel]");
+            System.err.println(
+                    "Usage: ServerApp --share <path> [--share <path> ...] [--port N] [--no-tunnel] [--diagnose]");
             System.exit(1);
         }
 

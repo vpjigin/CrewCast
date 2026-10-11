@@ -4,6 +4,10 @@ import com.solocrew.crewcast.media.AudioFixService;
 import com.solocrew.crewcast.media.FfmpegDownloadAssets;
 import com.solocrew.crewcast.media.FfmpegDownloadListener;
 import com.solocrew.crewcast.media.FfmpegDownloader;
+import com.solocrew.crewcast.net.DownloadFailureDetails;
+import com.solocrew.crewcast.net.DownloadErrors;
+import com.solocrew.crewcast.system.CrewcastDiagnostics;
+import com.solocrew.crewcast.system.CrewcastPaths;
 import com.solocrew.crewcast.media.FfmpegManager;
 import com.solocrew.crewcast.media.VideoBrowserContainers;
 import com.solocrew.crewcast.media.SubtitleService;
@@ -98,7 +102,9 @@ public class SharingService implements CloudflaredListener, FfmpegDownloadListen
                 ffmpegDownloader.downloadIfNeeded(true);
                 ffmpegManager.recheck();
             } catch (Exception ex) {
-                onFfmpegDownloadFinished(false, ex.getMessage() != null ? ex.getMessage() : "Download failed");
+                DownloadFailureDetails d = ffmpegDownloader.lastFailure();
+                String msg = d != null ? d.reason() : DownloadErrors.plainReason(ex, null);
+                onFfmpegDownloadFinished(false, msg);
             }
         }, "ffmpeg-download");
         t.setDaemon(true);
@@ -107,6 +113,22 @@ public class SharingService implements CloudflaredListener, FfmpegDownloadListen
 
     public boolean isFfmpegDownloadInProgress() {
         return ffmpegDownloader.isDownloadInProgress();
+    }
+
+    public DownloadFailureDetails lastFfmpegDownloadFailure() {
+        return ffmpegDownloader.lastFailure();
+    }
+
+    public DownloadFailureDetails lastTunnelFailure() {
+        return cloudflaredManager.lastFailure();
+    }
+
+    public String runDiagnosticsReport() {
+        return CrewcastDiagnostics.runReport();
+    }
+
+    public Path logsDirectory() {
+        return CrewcastPaths.logsDir();
     }
 
     public boolean addedShareIncludesNonNativeVideo(Path path, ShareEntry.Kind kind) throws IOException {
@@ -421,8 +443,13 @@ public class SharingService implements CloudflaredListener, FfmpegDownloadListen
 
     @Override
     public void onError(String message, boolean retryable) {
+        onError(message, retryable, cloudflaredManager.lastFailure());
+    }
+
+    @Override
+    public void onError(String message, boolean retryable, DownloadFailureDetails details) {
         for (SharingUiListener l : listeners) {
-            l.onTunnelError(message, retryable);
+            l.onTunnelError(message, retryable, details);
         }
     }
 }

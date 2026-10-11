@@ -201,6 +201,23 @@ class SettingsDialog extends JDialog {
         ToggleSwitch openLogin = addToggleRow(body, "Open Crewcast at login",
                 "Starts the app, never starts sharing by itself", workingCopy.isOpenAtLogin());
 
+        StyledButton openLogs = new StyledButton("Open log folder");
+        openLogs.setVariant(StyledButton.Variant.SECONDARY);
+        openLogs.packToContent();
+        openLogs.addActionListener(e -> openLogFolder());
+        StyledButton runDiagnostics = new StyledButton("Run diagnostics");
+        runDiagnostics.setVariant(StyledButton.Variant.SECONDARY);
+        runDiagnostics.packToContent();
+        runDiagnostics.addActionListener(e -> {
+            String report = sharingService.runDiagnosticsReport();
+            DownloadErrorDialog.showDiagnostics(this, report);
+        });
+        JPanel supportRow = new JPanel(new MigLayout("ins 0, gap 8", "[][]", "[]"));
+        supportRow.setOpaque(false);
+        supportRow.add(openLogs);
+        supportRow.add(runDiagnostics);
+        body.add(supportRow, "gapleft 4, gaptop 8, wrap");
+
         JScrollPane scroll = new JScrollPane(body);
         scroll.setBorder(BorderFactory.createEmptyBorder());
         scroll.getVerticalScrollBar().setUnitIncrement(16);
@@ -257,6 +274,20 @@ class SettingsDialog extends JDialog {
             cacheSizeLabel.setText(String.format("Audio cache: %.2f GB used", sharingService.audioCacheSizeGb()));
         } catch (Exception e) {
             cacheSizeLabel.setText("Audio cache: —");
+        }
+    }
+
+    private void openLogFolder() {
+        java.nio.file.Path dir = sharingService.logsDirectory();
+        try {
+            java.nio.file.Files.createDirectories(dir);
+            if (java.awt.Desktop.isDesktopSupported()) {
+                java.awt.Desktop.getDesktop().open(dir.toFile());
+            } else {
+                JOptionPane.showMessageDialog(this, dir.toAbsolutePath(), "Log folder", JOptionPane.INFORMATION_MESSAGE);
+            }
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, ex.getMessage(), "Could not open log folder", JOptionPane.ERROR_MESSAGE);
         }
     }
 
