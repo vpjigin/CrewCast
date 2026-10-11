@@ -27,6 +27,11 @@ linked libraries (no copyleft source-distribution requirement for Crewcast itsel
 | ZXing Core / JavaSE | 3.5.3 | Apache-2.0 | https://github.com/zxing/zxing |
 | JCommander (ZXing JavaSE) | 1.82 | Apache-2.0 | https://jcommander.org/ |
 | JAI ImageIO Core (ZXing JavaSE runtime) | 1.4.0 | BSD-3-Clause | https://github.com/jai-imageio/jai-imageio-core |
+| Apache Commons Compress | 1.27.1 | Apache-2.0 | https://commons.apache.org/proper/commons-compress/ |
+| Apache Commons IO (Commons Compress runtime) | 2.16.1 | Apache-2.0 | https://commons.apache.org/proper/commons-io/ |
+| Apache Commons Lang3 (Commons Compress runtime) | 3.14.0 | Apache-2.0 | https://commons.apache.org/proper/commons-lang/ |
+| Apache Commons Codec (Commons Compress runtime) | 1.16.1 | Apache-2.0 | https://commons.apache.org/proper/commons-codec/ |
+| XZ for Java (Commons Compress `.tar.xz`) | 1.10 | Public Domain | https://tukaani.org/xz/java.html |
 
 ## Maven dependencies (test only — not shipped in end-user jar unless you bundle tests)
 
@@ -65,7 +70,7 @@ The web player uses **system UI fonts** only (no webfont files).
 | Linux x64 / arm64 | `github.com` — BtbN `linux64-lgpl` / `linuxarm64-lgpl` | **LGPL v2.1+** |
 | macOS (Intel & Apple Silicon) | **ffmpeg.martin-riedl.de** (individual maintainer; SHA-256 from same host) | **GPL v2+** (verified arm64 build: `--enable-gpl`, libx264/libx265) |
 
-**Extraction:** Linux `.tar.xz` archives use the OS **`tar`** executable (`tar -xJf`); zip archives use the JDK. **No new Maven dependency** for decompression.
+**Extraction:** ffmpeg zip / `.tar.xz` and cloudflared `.tgz` are unpacked with **Apache Commons Compress** and **SafeArchive** (JDK zip for tests only). Linux/macOS binary modes from archive entries are applied where supported.
 
 ## Design mockups (`docs/design/desktop-ui/`)
 

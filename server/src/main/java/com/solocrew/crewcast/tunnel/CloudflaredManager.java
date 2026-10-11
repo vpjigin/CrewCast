@@ -7,6 +7,7 @@ import com.solocrew.crewcast.settings.SettingsStore;
 import com.solocrew.crewcast.net.DownloadErrors;
 import com.solocrew.crewcast.net.DownloadFailureDetails;
 import com.solocrew.crewcast.net.ResilientHttpFetcher;
+import com.solocrew.crewcast.archive.SafeArchive;
 import com.solocrew.crewcast.system.CrewcastPaths;
 import com.solocrew.crewcast.system.CrewcastWriteGuard;
 import org.slf4j.Logger;
@@ -230,6 +231,11 @@ public class CloudflaredManager {
         return CrewcastPaths.binDir().resolve(name);
     }
 
+    /** E2E: official GitHub download, checksum verify, and safe extract. */
+    void downloadLatestReleaseForTest(Path dest) throws IOException, InterruptedException {
+        downloadLatest(dest);
+    }
+
     private void downloadLatest(Path dest) throws IOException, InterruptedException {
         Path binDir = CrewcastPaths.binDir();
         CrewcastWriteGuard.check(dest);
@@ -360,18 +366,10 @@ public class CloudflaredManager {
             throw new IOException("Unexpected .tgz on Windows");
         }
         CrewcastWriteGuard.check(dest);
-        try {
-            Process p = new ProcessBuilder("tar", "-xzf", tgz.toString(), "-C", CrewcastPaths.binDir().toString())
-                    .redirectErrorStream(true)
-                    .start();
-            if (p.waitFor() != 0) {
-                throw new IOException("Failed to extract cloudflared archive");
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("Interrupted while extracting cloudflared", e);
-        }
-        Path extracted = CrewcastPaths.binDir().resolve("cloudflared");
+        Path binDir = CrewcastPaths.binDir();
+        Files.createDirectories(binDir);
+        SafeArchive.extractTarGz(tgz, binDir);
+        Path extracted = binDir.resolve("cloudflared");
         if (Files.exists(extracted)) {
             Files.move(extracted, dest, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         } else if (!Files.exists(dest)) {
