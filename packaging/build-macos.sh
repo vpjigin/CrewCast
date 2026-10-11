@@ -1,72 +1,48 @@
 #!/usr/bin/env bash
-# Build a self-contained macOS .dmg for Crewcast (host CPU only: arm64 or x64).
+# Build dist/Crewcast-macos-<arm64|x64>.dmg (self-contained, host CPU only).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=lib/common.sh
+source "${ROOT}/packaging/lib/common.sh"
+
 cd "$ROOT"
 
-die() {
-  echo "ERROR: $*" >&2
-  exit 1
-}
+packaging_require_cmd java
+packaging_require_cmd jdeps
+packaging_require_cmd jlink
+packaging_require_cmd jpackage
+packaging_require_cmd jar
+packaging_require_cmd mvn
+packaging_require_cmd python3
 
-require_cmd() {
-  command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"
-}
+[[ "$(uname -s)" == "Darwin" ]] || packaging_die "This script must run on macOS."
 
-require_cmd java
-require_cmd jdeps
-require_cmd jlink
-require_cmd jpackage
-require_cmd jar
-require_cmd mvn
-require_cmd swift
-require_cmd iconutil
-require_cmd sips
-
-if [[ "$(uname -s)" != "Darwin" ]]; then
-  die "This script must run on macOS."
-fi
-
-JAVA_MAJOR="$(java -version 2>&1 | head -1 | sed -E 's/.*version "([0-9]+).*/\1/')"
-if [[ -z "${JAVA_MAJOR}" ]] || (( JAVA_MAJOR < 21 )); then
-  die "JDK 21 or newer is required (found Java ${JAVA_MAJOR:-unknown}). Install a JDK 21+ with jlink and jpackage."
-fi
+packaging_ensure_java_21
 
 ARCH="$(uname -m)"
 case "$ARCH" in
   arm64) ARCH_LABEL="arm64" ;;
   x86_64) ARCH_LABEL="x64" ;;
-  *) die "Unsupported macOS architecture: $ARCH" ;;
+  *) packaging_die "Unsupported macOS architecture: $ARCH" ;;
 esac
 
-echo "==> Maven build (desktop + dependencies, skip tests)"
-mvn -pl desktop -am package -DskipTests
+RAW_VERSION="$(packaging_resolve_version "$ROOT")"
+APP_VERSION="$(packaging_app_version_macos "$RAW_VERSION")"
+echo "==> Version: raw=${RAW_VERSION} jpackage=${APP_VERSION}"
 
-MVN_VERSION="$(mvn -q -DforceStdout help:evaluate -Dexpression=project.version)"
-FILE_VERSION="${MVN_VERSION%-SNAPSHOT}"
-JAR="${ROOT}/desktop/target/crewcast-desktop-${MVN_VERSION}.jar"
-[[ -f "$JAR" ]] || die "Runnable jar not found: $JAR"
+echo "==> Maven build"
+packaging_maven_build "$ROOT"
 
-# jpackage on macOS requires CFBundleShortVersionString with a major version >= 1.
-# Maven 0.0.x-SNAPSHOT is mapped to 1.0.0 until the project reaches 1.x.
-jpackage_app_version() {
-  local v="$1"
-  local major="${v%%.*}"
-  if [[ "$major" =~ ^[0-9]+$ ]] && (( major < 1 )); then
-    echo "1.0.0"
-  else
-    echo "$v"
-  fi
-}
-APP_VERSION="$(jpackage_app_version "$FILE_VERSION")"
-if [[ "$APP_VERSION" != "$FILE_VERSION" ]]; then
-  echo "Note: Maven version ${FILE_VERSION} → jpackage --app-version ${APP_VERSION} (macOS requires major >= 1)."
-fi
+JAR="$(packaging_desktop_jar "$ROOT")"
+echo "==> Desktop jar: ${JAR}"
 
+bash "${ROOT}/packaging/generate-artwork.sh"
 ICNS="${ROOT}/packaging/macos/Crewcast.icns"
 if [[ ! -f "$ICNS" ]]; then
-  echo "==> Generating app icon"
+  packaging_require_cmd swift
+  packaging_require_cmd iconutil
+  packaging_require_cmd sips
   bash "${ROOT}/packaging/macos/generate-icns.sh"
 fi
 
@@ -74,39 +50,18 @@ WORKDIR="${ROOT}/packaging/macos/build"
 INPUT="${WORKDIR}/input"
 RUNTIME="${WORKDIR}/runtime"
 rm -rf "$WORKDIR"
-mkdir -p "$INPUT"
+mkdir -p "$INPUT" "${ROOT}/dist"
 cp "$JAR" "$INPUT/"
 
-echo "==> Discovering Java modules (jdeps)"
-JDEPS_TMP="$(mktemp -d)"
-trap 'rm -rf "$JDEPS_TMP"' EXIT
-( cd "$JDEPS_TMP" && jar xf "$JAR" )
-JDEPS_MODULES="$(
-  jdeps --ignore-missing-deps --multi-release 21 --recursive --print-module-deps \
-    --class-path "${JDEPS_TMP}/BOOT-INF/classes:${JDEPS_TMP}/BOOT-INF/lib/*" \
-    "${JDEPS_TMP}/BOOT-INF/classes" 2>/dev/null || true
-)"
-MANDATORY="java.desktop,java.logging,java.naming,java.management,java.sql,java.xml,jdk.unsupported,jdk.crypto.ec"
-ALL_MODULES="$(
-  { echo "$JDEPS_MODULES"; echo "$MANDATORY"; } \
-    | tr ',' '\n' | sed '/^$/d' | sort -u | paste -sd, -
-)"
-echo "    modules: ${ALL_MODULES}"
+echo "==> jdeps + jlink"
+MODULES="$(packaging_discover_modules "$JAR")"
+echo "    modules: ${MODULES}"
+packaging_jlink_runtime "$MODULES" "$RUNTIME"
 
-echo "==> Building custom runtime (jlink)"
-jlink \
-  --output "$RUNTIME" \
-  --add-modules "$ALL_MODULES" \
-  --strip-debug \
-  --no-header-files \
-  --no-man-pages \
-  --compress=2
+OUT="${ROOT}/dist/Crewcast-macos-${ARCH_LABEL}.dmg"
+rm -f "$OUT"
 
-mkdir -p "${ROOT}/dist"
-DMG_NAME="Crewcast-${FILE_VERSION}-macos-${ARCH_LABEL}.dmg"
-DMG_PATH="${ROOT}/dist/${DMG_NAME}"
-
-echo "==> Packaging .dmg (jpackage)"
+echo "==> jpackage (dmg)"
 jpackage \
   --type dmg \
   --dest "${ROOT}/dist" \
@@ -121,22 +76,16 @@ jpackage \
   --main-class org.springframework.boot.loader.launch.JarLauncher \
   --runtime-image "$RUNTIME"
 
-# jpackage names the dmg after --name; rename to our versioned filename.
-DEFAULT_DMG="${ROOT}/dist/Crewcast-${APP_VERSION}.dmg"
-if [[ -f "$DEFAULT_DMG" && "$DEFAULT_DMG" != "$DMG_PATH" ]]; then
-  mv -f "$DEFAULT_DMG" "$DMG_PATH"
-elif [[ -f "${ROOT}/dist/Crewcast-1.0.0.dmg" && ! -f "$DMG_PATH" ]]; then
-  mv -f "${ROOT}/dist/Crewcast-1.0.0.dmg" "$DMG_PATH"
-fi
+# Normalize jpackage output name to our fixed artifact name.
+for candidate in "${ROOT}/dist/Crewcast-${APP_VERSION}.dmg" "${ROOT}/dist/Crewcast.dmg"; do
+  if [[ -f "$candidate" && "$candidate" != "$OUT" ]]; then
+    mv -f "$candidate" "$OUT"
+    break
+  fi
+done
 
-[[ -f "$DMG_PATH" ]] || die "Expected dmg not found at $DMG_PATH (check dist/)"
+[[ -f "$OUT" ]] || packaging_die "Expected ${OUT} (check dist/)"
 
-BYTES="$(stat -f%z "$DMG_PATH" 2>/dev/null || stat -c%s "$DMG_PATH")"
+BYTES="$(stat -f%z "$OUT" 2>/dev/null || stat -c%s "$OUT")"
 MB="$(awk "BEGIN {printf \"%.1f\", $BYTES / 1048576}")"
-
-echo ""
-echo "Done."
-echo "  Output: ${DMG_PATH}"
-echo "  Size:   ${MB} MiB (${BYTES} bytes)"
-echo "  Test:   open \"${DMG_PATH}\" && drag Crewcast.app to Applications, then launch"
-echo "          (unsigned: right-click → Open, or System Settings → Privacy & Security → Open Anyway)"
+echo "Done: ${OUT} (${MB} MiB)"

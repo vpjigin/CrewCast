@@ -59,9 +59,24 @@ chmod +x packaging/build-macos.sh packaging/macos/generate-icns.sh
 ./packaging/build-macos.sh
 ```
 
-This produces `dist/Crewcast-<version>-macos-<arch>.dmg` (for example `dist/Crewcast-0.0.1-macos-arm64.dmg`) containing **Crewcast.app** and a bundled Java 21 runtime. End users do not need Java or Maven installed. App data is still stored only in `~/.crewcast/`, not inside the app bundle.
+This produces **`dist/Crewcast-macos-arm64.dmg`** or **`dist/Crewcast-macos-x64.dmg`** (fixed names, no version in the filename) containing **Crewcast.app** and a bundled Java 21 runtime. End users do not need Java or Maven installed. App data is still stored only in `~/.crewcast/`, not inside the app bundle.
 
 The build is **unsigned**. On first launch, macOS Gatekeeper may block the app — use **right-click → Open**, or **System Settings → Privacy & Security → Open Anyway**.
+
+Windows and Linux installers use the same approach: `packaging/build-windows.ps1` → **`dist/Crewcast-windows-x64.msi`**, `packaging/build-linux.sh` → **`dist/Crewcast-linux-x64.deb`**. Set **`CREWCAST_RELEASE_VERSION`** (e.g. `1.0.0`) to match a release tag when testing version metadata.
+
+---
+
+## Releases
+
+Official builds are produced when you push a **`v*`** tag (see [docs/RELEASING.md](docs/RELEASING.md)). Installers appear on the GitHub **Releases** page:
+
+- `Crewcast-macos-arm64.dmg`, `Crewcast-macos-x64.dmg`
+- `Crewcast-windows-x64.msi`
+- `Crewcast-linux-x64.deb`
+- **`SHA256SUMS.txt`** — verify downloads with `shasum -a 256 -c SHA256SUMS.txt`
+
+Installers are **unsigned**. **macOS** Gatekeeper and **Windows** SmartScreen may warn on first run; see the macOS steps above and use **More info → Run anyway** on Windows when you trust the file.
 
 ---
 
@@ -120,11 +135,7 @@ When **Fix audio for browsers** is enabled, Crewcast converts non-browser audio 
 - **Headless:** `--download-ffmpeg` before sharing
 - **Manual install:** `brew install ffmpeg`, `winget install ffmpeg`, `apt install ffmpeg`, etc., then **Re-check ffmpeg** in Settings
 
-**Tests:** `mvn -pl server test` does **not** download ffmpeg. Optional real-download test:
-
-```bash
-mvn -pl server test -Dcrewcast.ffmpeg.e2e=true
-```
+See [Development → Tests](#development) for the full test matrix (CI vs local e2e).
 
 ### Cache and playback
 
@@ -226,6 +237,34 @@ Data directory: `~/.crewcast/` (settings, cache, optional `bin/` for cloudflared
 | `GET /subtitles/{id}/{index}.vtt` | WebVTT captions (UTF-8) |
 
 When sharing is off, protected routes respond with **503**. When **Require private key** is on, missing or wrong `t` yields **403** (except configured LAN bypass).
+
+---
+
+## Development
+
+### Tests
+
+CI runs unit/integration tests only (no ffmpeg or Playwright on the runner):
+
+```bash
+mvn -B verify -DexcludedGroups=e2e
+```
+
+Before a release, run the **e2e** suite locally (needs **ffmpeg** and **ffprobe** on `PATH`, plus Playwright Chromium — install once with `mvn exec:java -pl server -e -D exec.mainClass=com.microsoft.playwright.CLI -D exec.args="install chromium"`):
+
+```bash
+mvn -pl server test
+# or e2e only:
+mvn -pl server test -Dgroups=e2e
+```
+
+Plain `mvn -pl server test` does **not** download ffmpeg. Optional real-download test (network, macOS):
+
+```bash
+mvn -pl server test -Dgroups=e2e -Dcrewcast.ffmpeg.e2e=true
+```
+
+Without ffmpeg, e2e classes are **skipped** (not errors). With `-DexcludedGroups=e2e`, they are not loaded at all (same as CI).
 
 ---
 

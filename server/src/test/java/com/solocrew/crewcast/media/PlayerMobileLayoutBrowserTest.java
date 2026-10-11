@@ -21,9 +21,9 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@E2eFfmpegRequired
 class PlayerMobileLayoutBrowserTest extends CrewcastSpringTestBase {
 
     private static Path coverArt;
@@ -43,7 +43,6 @@ class PlayerMobileLayoutBrowserTest extends CrewcastSpringTestBase {
 
     @BeforeEach
     void setup() throws Exception {
-        assumeTrue(AudioFixIntegrationTest.ffmpegAvailable(), "ffmpeg not on PATH");
         if (coverArt == null) {
             coverArt = MediaTestFixtures.coverArt();
         }

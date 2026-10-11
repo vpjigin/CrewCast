@@ -5,6 +5,8 @@ dist/
 # macOS packaging scratch
 packaging/macos/build/
 packaging/macos/Crewcast.iconset/
+packaging/linux/build/
+packaging/windows/build/
 
 # IDE
 .idea/
