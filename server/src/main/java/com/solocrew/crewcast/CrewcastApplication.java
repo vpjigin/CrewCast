@@ -9,6 +9,7 @@ import org.springframework.context.annotation.Import;
 @Import(TomcatConnectorConfig.class)
 public class CrewcastApplication {
     public static void main(String[] args) {
+        com.solocrew.crewcast.system.CrewcastBootstrap.init();
         SpringApplication.run(CrewcastApplication.class, args);
     }
 }

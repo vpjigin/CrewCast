@@ -16,6 +16,7 @@ public final class DesktopApp {
     }
 
     public static void main(String[] args) {
+        com.solocrew.crewcast.system.CrewcastBootstrap.init();
         System.setProperty("java.awt.headless", "false");
         System.setProperty("apple.awt.application.name", "Crewcast");
         System.setProperty("awt.useSystemAAFontSettings", "on");

@@ -17,6 +17,7 @@ import com.solocrew.crewcast.desktop.ui.StyledButton;
 import com.solocrew.crewcast.desktop.ui.ToggleSwitch;
 import com.solocrew.crewcast.desktop.ui.UrlField;
 import com.solocrew.crewcast.desktop.ui.ViewportWidthPanel;
+import com.solocrew.crewcast.net.DownloadFailureDetails;
 import com.solocrew.crewcast.facade.ShareListItem;
 import com.solocrew.crewcast.facade.SharingLinks;
 import com.solocrew.crewcast.facade.SharingService;
@@ -148,6 +149,8 @@ public class MainFrame extends JFrame implements SharingUiListener {
     private boolean qrShowsPublic = true;
     private String lastTunnelError;
     private boolean lastTunnelRetryable;
+    private com.solocrew.crewcast.net.DownloadFailureDetails lastTunnelFailureDetails;
+    private StyledButton tunnelCopyDetailsButton;
 
     public MainFrame() {
         super("Crewcast");
@@ -568,10 +571,16 @@ public class MainFrame extends JFrame implements SharingUiListener {
                 sharingService.retryTunnel();
             }
         });
-        tunnelErrRow = new JPanel(new MigLayout("ins 0, gap 8, fillx", "[grow,fill][pref!]", "[]"));
+        tunnelCopyDetailsButton = new StyledButton("Copy details");
+        tunnelCopyDetailsButton.setVariant(StyledButton.Variant.GHOST);
+        tunnelCopyDetailsButton.setVisible(false);
+        tunnelCopyDetailsButton.packToContent();
+        tunnelCopyDetailsButton.addActionListener(e -> copyTunnelFailureDetails());
+        tunnelErrRow = new JPanel(new MigLayout("ins 0, gap 8, fillx", "[grow,fill][pref!][pref!]", "[]"));
         tunnelErrRow.setOpaque(false);
         tunnelErrRow.setVisible(false);
         tunnelErrRow.add(tunnelErrorLabel, "growx, wmin 0");
+        tunnelErrRow.add(tunnelCopyDetailsButton, "aligny center, shrink 0");
         tunnelErrRow.add(tunnelRetryButton, "aligny center, shrink 0");
         card.add(tunnelErrRow, "growx");
         return card;
@@ -1148,6 +1157,16 @@ public class MainFrame extends JFrame implements SharingUiListener {
         }
         tunnelErrorLabel.setText(tunnelErr ? lastTunnelError : "");
         tunnelRetryButton.setVisible(tunnelErr && lastTunnelRetryable);
+        tunnelCopyDetailsButton.setVisible(tunnelErr && lastTunnelFailureDetails != null);
+    }
+
+    private void copyTunnelFailureDetails() {
+        if (lastTunnelFailureDetails == null) {
+            return;
+        }
+        java.awt.Toolkit.getDefaultToolkit()
+                .getSystemClipboard()
+                .setContents(new java.awt.datatransfer.StringSelection(lastTunnelFailureDetails.copyText()), null);
     }
 
     private String tunnelStateLabel() {
@@ -1525,11 +1544,8 @@ public class MainFrame extends JFrame implements SharingUiListener {
                 String detail = message != null && !message.isBlank()
                         ? message
                         : "Download failed. Check your network connection and try again.";
-                javax.swing.JOptionPane.showMessageDialog(
-                        this,
-                        detail,
-                        "Could not download ffmpeg",
-                        javax.swing.JOptionPane.ERROR_MESSAGE);
+                DownloadFailureDetails failure = sharingService.lastFfmpegDownloadFailure();
+                DownloadErrorDialog.show(this, "Could not download ffmpeg", detail, failure);
             }
             updateFixAudioMutedHint();
         });
@@ -1540,6 +1556,7 @@ public class MainFrame extends JFrame implements SharingUiListener {
         SwingUtilities.invokeLater(() -> {
             downloadBanner.setVisible(false);
             lastTunnelError = null;
+            lastTunnelFailureDetails = null;
             refreshDynamicUi();
         });
     }
@@ -1551,9 +1568,15 @@ public class MainFrame extends JFrame implements SharingUiListener {
 
     @Override
     public void onTunnelError(String message, boolean retryable) {
+        onTunnelError(message, retryable, sharingService != null ? sharingService.lastTunnelFailure() : null);
+    }
+
+    @Override
+    public void onTunnelError(String message, boolean retryable, com.solocrew.crewcast.net.DownloadFailureDetails details) {
         SwingUtilities.invokeLater(() -> {
             lastTunnelError = message;
             lastTunnelRetryable = retryable;
+            lastTunnelFailureDetails = details;
             refreshDynamicUi();
         });
     }

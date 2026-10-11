@@ -28,6 +28,10 @@ public interface SharingUiListener {
     default void onTunnelError(String message, boolean retryable) {
     }
 
+    default void onTunnelError(String message, boolean retryable, com.solocrew.crewcast.net.DownloadFailureDetails details) {
+        onTunnelError(message, retryable);
+    }
+
     default void onViewersChanged(List<ViewerView> viewers) {
     }
 }

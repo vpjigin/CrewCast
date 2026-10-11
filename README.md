@@ -198,6 +198,18 @@ More detail: [PRIVACY.md](PRIVACY.md), [TERMS.md](TERMS.md), [docs/PRIVACY-INVEN
 
 ---
 
+## Troubleshooting
+
+Download or tunnel problems on Windows (no console):
+
+1. Open **Settings → Open log folder** and check **`crewcast.log`** (also under `%USERPROFILE%\.crewcast\logs\` on Windows).
+2. Run **Settings → Run diagnostics** (or headless: `java -jar …-exec.jar --diagnose` with no `--share`) to test reachability of GitHub and ffmpeg hosts, proxy, and trust store.
+3. Use **Copy details** on ffmpeg or tunnel error dialogs to paste the reason, URL, and log path into a bug report.
+
+If HTTPS downloads fail with a certificate warning, your PC or antivirus may be intercepting TLS — try `-Dcrewcast.useJavaTrustStore=true` or install the inspection CA in Windows.
+
+---
+
 ## Known limitations
 
 - **Quick tunnels** — Cloudflare Quick Tunnel URLs are best-effort; no uptime SLA. Use **Wi‑Fi** or `--no-tunnel` if you need LAN-only.
