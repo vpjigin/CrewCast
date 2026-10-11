@@ -18,18 +18,34 @@ Share videos from your computer to any device, on your Wi‑Fi or over the inter
 
 | Platform | Download | Notes |
 |----------|----------|-------|
-| macOS, Apple Silicon (M1/M2/M3/M4) | [Crewcast-macos-arm64.dmg](https://github.com/vpjigin/CrewCast/releases/latest/download/Crewcast-macos-arm64.dmg) | Open the .dmg, drag Crewcast to Applications |
-| macOS, Intel | [Crewcast-macos-x64.dmg](https://github.com/vpjigin/CrewCast/releases/latest/download/Crewcast-macos-x64.dmg) | same |
+| macOS, Apple Silicon (M1/M2/M3/M4) | [Crewcast-macos-arm64.dmg](https://github.com/vpjigin/CrewCast/releases/latest/download/Crewcast-macos-arm64.dmg) | Open the .dmg, drag Crewcast to Applications, then see [First launch on macOS](#first-launch-on-macos) below |
+| macOS, Intel | [Crewcast-macos-x64.dmg](https://github.com/vpjigin/CrewCast/releases/latest/download/Crewcast-macos-x64.dmg) | Open the .dmg, drag Crewcast to Applications, then see [First launch on macOS](#first-launch-on-macos) below |
 | Windows 10/11 (64-bit) | [Crewcast-windows-x64.msi](https://github.com/vpjigin/CrewCast/releases/latest/download/Crewcast-windows-x64.msi) | Run the installer |
 | Linux, Debian/Ubuntu (64-bit) | [Crewcast-linux-x64.deb](https://github.com/vpjigin/CrewCast/releases/latest/download/Crewcast-linux-x64.deb) | `sudo apt install ./Crewcast-linux-x64.deb` |
+
+### First launch on macOS
+
+Installers are not signed with a paid Apple Developer ID yet, so the first time you open Crewcast macOS may show **“Crewcast Not Opened”** / **“Apple could not verify…”**.
+
+**Fix 1 (fastest):** After dragging Crewcast to Applications, run this in Terminal, then open the app normally:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Crewcast.app
+```
+
+This only removes the “downloaded from the internet” quarantine flag from this app. If Crewcast is installed somewhere else, change the path in the command.
+
+**Fix 2 (no Terminal):** Try to open the app, click **Done** on the dialog, then open **System Settings → Privacy & Security**, scroll to the message about Crewcast, and click **Open Anyway** (enter your password when prompted).
+
+You can verify the download with the SHA256 checksum in **`SHA256SUMS.txt`** before running it.
+
+Paid code signing is planned if the project is used widely; the source and the release workflow are public so anyone can check how the installers are built.
 
 - [All releases and older versions](https://github.com/vpjigin/CrewCast/releases)
 - **Verify a download** — each release includes **`SHA256SUMS.txt`**. After downloading the checksums file alongside your installer:
   - **macOS / Linux:** `shasum -a 256 Crewcast-macos-arm64.dmg` (replace with your filename) and compare to the line in `SHA256SUMS.txt`
   - **Windows (PowerShell):** `Get-FileHash -Algorithm SHA256 .\Crewcast-windows-x64.msi`
-- **First launch** — installers are **not code-signed yet**. The project is **open source**; release builds are produced by **GitHub Actions** from the tagged commit.
-  - **macOS** may say the app is from an **unidentified developer** — **right-click → Open**, or **System Settings → Privacy & Security → Open Anyway**
-  - **Windows SmartScreen** may say **unknown publisher** — **More info → Run anyway**
+- **First launch on Windows** — **SmartScreen** may say **“Windows protected your PC”** — click **More info**, then **Run anyway**, because the installer is not code-signed yet.
 - **Java is included**; you do not need to install anything else.
 - **Linux arm64**, **Linux .rpm**, and **portable** builds are not available yet — [open an issue](https://github.com/vpjigin/CrewCast/issues/new) if you need one.
 
@@ -53,8 +69,8 @@ Supported video extensions: `.mp4`, `.mkv`, `.mov`, `.webm`, `.m4v`.
 
 ## Requirements
 
-- **JDK 21+** and **Maven** to build and run from source
-- **Installers** (macOS / Windows / Linux) are planned; until then, use the steps below
+- **JDK 21+** and **Maven** to build and run from source (see [Run from source](#run-from-source))
+- **Installers** for macOS (Apple Silicon and Intel), Windows, and Linux are built by **GitHub Actions** on each release — see [Download](#download)
 
 ---
 
@@ -82,7 +98,7 @@ Official builds are produced when you push a **`v*`** tag (see [docs/RELEASING.m
 - `Crewcast-linux-x64.deb`
 - **`SHA256SUMS.txt`** — verify downloads with `shasum -a 256 -c SHA256SUMS.txt`
 
-Installers are **unsigned**. **macOS** Gatekeeper and **Windows** SmartScreen may warn on first run; see the macOS steps above and use **More info → Run anyway** on Windows when you trust the file.
+Installers are **unsigned**. **macOS** Gatekeeper and **Windows** SmartScreen may warn on first run; see [First launch on macOS](#first-launch-on-macos) in the Download section and **More info → Run anyway** on Windows when you trust the file.
 
 ---
 
