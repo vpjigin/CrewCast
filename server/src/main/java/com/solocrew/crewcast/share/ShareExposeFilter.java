@@ -21,7 +21,7 @@ public final class ShareExposeFilter {
         }
         Path root = folderRoot.toAbsolutePath().normalize();
         Path candidate = file.toAbsolutePath().normalize();
-        if (!candidate.startsWith(root)) {
+        if (!candidate.startsWith(root) || !SharePathSecurity.isInsideShareRoot(root, candidate)) {
             return false;
         }
         Path relative = root.relativize(candidate);
@@ -45,6 +45,40 @@ public final class ShareExposeFilter {
         return "Thumbs.db".equalsIgnoreCase(name)
                 || "desktop.ini".equalsIgnoreCase(name)
                 || ".DS_Store".equals(name);
+    }
+
+    public static boolean isIgnoredDirectoryName(String name) {
+        return IGNORED_DIR_NAMES.contains(name);
+    }
+
+    /** Whether a directory entry should appear in browse listings (not file expose rules). */
+    public static boolean shouldListDirectoryEntry(Path shareRoot, Path directory) {
+        if (!Files.isDirectory(directory)) {
+            return false;
+        }
+        String name = directory.getFileName().toString();
+        if (isHiddenFileName(name) || isIgnoredDirectoryName(name)) {
+            return false;
+        }
+        try {
+            if (hasOsHiddenAttribute(directory)) {
+                return false;
+            }
+        } catch (Exception ignored) {
+            // fall through
+        }
+        return SharePathSecurity.isInsideShareRoot(shareRoot, directory);
+    }
+
+    /** Whether a file or directory entry under {@code parent} should appear in immediate children. */
+    public static boolean shouldListEntry(Path shareRoot, Path entry) {
+        if (Files.isRegularFile(entry)) {
+            return shouldExposeFromFolder(shareRoot, entry);
+        }
+        if (Files.isDirectory(entry)) {
+            return shouldListDirectoryEntry(shareRoot, entry);
+        }
+        return false;
     }
 
     private static boolean hasOsHiddenAttribute(Path path) {

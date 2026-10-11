@@ -80,10 +80,19 @@
     return !tr.ready && !tr.browserPlayable;
   }
 
+  function filesHomeHref(){
+    var p = new URLSearchParams();
+    var t = pageToken();
+    if (t) p.set('t', t);
+    var folder = new URLSearchParams(window.location.search).get('folder');
+    if (folder) p.set('folder', folder);
+    var qs = p.toString();
+    return qs ? '/?' + qs : '/';
+  }
+
   var backLink = document.getElementById('back-to-files');
   if (backLink) {
-    var homeToken = pageToken();
-    backLink.href = homeToken ? '/?t=' + encodeURIComponent(homeToken) : '/';
+    backLink.href = filesHomeHref();
   }
 
   fetch(withToken('/api/videos/' + encodeURIComponent(id)), fetchOpts())

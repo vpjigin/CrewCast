@@ -129,7 +129,7 @@ public class MainFrame extends JFrame implements SharingUiListener {
     private final JLabel statusViewers = new JLabel("0 people watching · tunnel idle");
     private final StyledButton sharingButton = new StyledButton("Start sharing");
     private final JLabel folderShareNotice = new JLabel(
-            "Everything in this folder (except hidden files) will be visible to anyone with your link.");
+            "<html><div style='max-width:240px;line-height:1.4'>Shared folders expose all non-hidden files to anyone with your link.</div></html>");
 
     private final UrlField publicLinkField = new UrlField();
     private final UrlField wifiLinkField = new UrlField();
@@ -366,7 +366,7 @@ public class MainFrame extends JFrame implements SharingUiListener {
         removeAllSharesBtn.addActionListener(e -> confirmRemoveAllShares());
 
         ElideLabel shareTitleElide = new ElideLabel();
-        shareTitleElide.setFullText("Shared videos");
+        shareTitleElide.setFullText("Shared items");
         shareTitleElide.setFont(Fonts.ui(700, 15));
         shareTitleElide.setForeground(CrewcastTheme.TEXT);
 
@@ -405,7 +405,7 @@ public class MainFrame extends JFrame implements SharingUiListener {
         iconTile.setPreferredSize(new Dimension(52, 52));
         iconTile.add(new JLabel(Icons.of("folder", 26, CrewcastTheme.LINK)), "align center");
 
-        JLabel emptyTitle = new JLabel("Drop a folder or videos here", JLabel.CENTER);
+        JLabel emptyTitle = new JLabel("Drop folders or files here", JLabel.CENTER);
         emptyTitle.setFont(Fonts.ui(700, 14));
         emptyTitle.setForeground(CrewcastTheme.TEXT);
         JLabel emptyHint = new JLabel(

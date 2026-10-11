@@ -17,6 +17,18 @@ a{color:inherit}
 .hero h1{margin:0;font-size:34px;font-weight:700;letter-spacing:-0.02em}
 .hero-lead{font-size:15px;color:#9AA3B2;line-height:1.45;max-width:640px}
 
+.browse-nav{display:flex;flex-wrap:wrap;align-items:center;gap:12px 16px;margin:-8px 0 4px}
+.btn-back{min-height:36px;padding:0 14px;border-radius:8px;border:1px solid #3A4150;background:transparent;color:#E8EAF0;font-size:14px;font-weight:600;cursor:pointer}
+.btn-back:hover{border-color:#4FD1C5}
+.breadcrumb{display:flex;flex-wrap:wrap;align-items:center;gap:4px 0;margin:0;padding:0;list-style:none;font-size:14px;color:#9AA3B2}
+.breadcrumb-item{display:flex;align-items:center;gap:6px}
+.breadcrumb-sep{color:#5A6375;padding:0 4px}
+.breadcrumb-link{padding:4px 6px;margin:0;border:0;border-radius:6px;background:transparent;color:#C5CAD6;font:inherit;font-weight:600;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.breadcrumb-link:hover{color:#4FD1C5}
+.breadcrumb-current{padding:4px 6px;color:#E8EAF0;font-weight:600}
+.folder-thumb svg{display:block}
+.show-more{align-self:center;margin:8px auto 0}
+
 .file-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:20px}
 .file-card{display:flex;flex-direction:column;text-align:left;padding:0;background:#161920;border:1px solid #262B36;border-radius:14px;overflow:hidden;cursor:pointer;color:inherit;width:100%}
 .file-card:hover{border-color:#3A4150}
