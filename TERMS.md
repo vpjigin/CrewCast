@@ -37,7 +37,7 @@ to your shares, or service interruption.
 
 ## Governing law
 
-> **DRAFT:** These terms are intended to be governed by the laws of **India (Kerala)**
+> **DRAFT:** These terms are intended to be governed by the laws of **India**
 > once finalized.
 
 ## Contact
