@@ -267,7 +267,15 @@ mvn -pl server test -Dcrewcast.ffmpeg.e2e=true
 
 ---
 
-## 13. License
+## 13. Contact
+
+- **Bugs and feature requests** — Open a GitHub issue on this repository.
+- **Security problems** — Use the repository’s **Report a vulnerability** button (Security tab), or email [solocrew.me@gmail.com](mailto:solocrew.me@gmail.com). Do not post vulnerabilities in public issues.
+- **General questions and business enquiries** — [solocrew.me@gmail.com](mailto:solocrew.me@gmail.com).
+
+---
+
+## 14. License
 
 Crewcast is released under the [MIT License](LICENSE). Third-party libraries and fonts
 are listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
