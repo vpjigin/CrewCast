@@ -27,7 +27,7 @@ case "$ARCH" in
   *) packaging_die "Unsupported macOS architecture: $ARCH" ;;
 esac
 
-RAW_VERSION="$(packaging_raw_version "$ROOT")"
+RAW_VERSION="$(packaging_resolve_version "$ROOT")"
 APP_VERSION="$(packaging_app_version_macos "$RAW_VERSION")"
 echo "==> Version: raw=${RAW_VERSION} jpackage=${APP_VERSION}"
 

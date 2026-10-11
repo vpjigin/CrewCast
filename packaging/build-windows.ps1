@@ -11,14 +11,29 @@ if (-not (Test-Path "$Root/pom.xml")) {
     Die "Could not locate repo root from $PSScriptRoot"
 }
 
-function Get-RawVersion {
-    if ($env:CREWCAST_RELEASE_VERSION) {
-        return $env:CREWCAST_RELEASE_VERSION.TrimStart("v")
-    }
+function Get-MavenVersion {
     Push-Location $Root
     $v = & mvn -q -DforceStdout help:evaluate -Dexpression=project.version
     Pop-Location
     return ($v -replace "-SNAPSHOT$", "")
+}
+
+function Get-ResolvedVersion {
+    $fallback = Get-MavenVersion
+    $envVal = $env:CREWCAST_RELEASE_VERSION
+    if ([string]::IsNullOrWhiteSpace($envVal)) {
+        Write-Warning "No valid CREWCAST_RELEASE_VERSION; using Maven fallback $fallback."
+        return $fallback
+    }
+    $raw = $envVal.TrimStart("v")
+    if ($raw -match "-") {
+        $raw = $raw.Substring(0, $raw.IndexOf("-"))
+    }
+    if ($raw -match "^\d+(\.\d+){0,2}$") {
+        return $raw
+    }
+    Write-Warning "CREWCAST_RELEASE_VERSION='$envVal' is not a valid numeric version; using Maven fallback $fallback."
+    return $fallback
 }
 
 function Get-TripleVersion([string]$raw) {
@@ -32,6 +47,14 @@ function Get-TripleVersion([string]$raw) {
     return "1.0.0"
 }
 
+function Get-MacosAppVersion([string]$raw) {
+    if ($raw -match "^(\d+)") {
+        $major = [int]$Matches[1]
+        if ($major -lt 1) { return "1.0.0" }
+    }
+    return $raw
+}
+
 # Fixed upgrade code for in-place MSI upgrades (do not change between releases).
 $WinUpgradeUuid = "8f3e2a1b-5c4d-4e9f-a2b1-6d7e8f9a0bcd"
 
@@ -43,7 +66,7 @@ foreach ($cmd in @("java", "jdeps", "jlink", "jpackage", "jar", "mvn", "python")
     if (-not (Get-Command $cmd -ErrorAction SilentlyContinue)) { Die "Missing command: $cmd" }
 }
 
-$rawVersion = Get-RawVersion
+$rawVersion = Get-ResolvedVersion
 $appVersion = Get-TripleVersion $rawVersion
 Write-Host "==> Version: raw=$rawVersion jpackage=$appVersion"
 

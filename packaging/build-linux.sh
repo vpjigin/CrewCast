@@ -21,7 +21,7 @@ packaging_require_cmd python3
 
 packaging_ensure_java_21
 
-RAW_VERSION="$(packaging_raw_version "$ROOT")"
+RAW_VERSION="$(packaging_resolve_version "$ROOT")"
 APP_VERSION="$(packaging_app_version_triple "$RAW_VERSION")"
 echo "==> Version: raw=${RAW_VERSION} jpackage=${APP_VERSION}"
 

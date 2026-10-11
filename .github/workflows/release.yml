@@ -44,7 +44,8 @@ jobs:
             artifact: Crewcast-windows-x64
             ext: msi
             script: packaging/build-windows.ps1
-          - os: ubuntu-latest
+          # Pinned: ubuntu-latest moves to Ubuntu 26 on 2026-10-19.
+          - os: ubuntu-24.04
             artifact: Crewcast-linux-x64
             ext: deb
             script: packaging/build-linux.sh
@@ -63,7 +64,7 @@ jobs:
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "CREWCAST_RELEASE_VERSION=${{ inputs.version }}" >> "$GITHUB_ENV"
-          else
+          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
             echo "CREWCAST_RELEASE_VERSION=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
           fi
 

@@ -13,14 +13,29 @@ packaging_require_cmd() {
   command -v "$1" >/dev/null 2>&1 || packaging_die "Missing required command: $1"
 }
 
-# Raw version: CREWCAST_RELEASE_VERSION (strip leading v) or Maven version without -SNAPSHOT.
-packaging_raw_version() {
+packaging_maven_version() {
   local root="$1"
-  if [[ -n "${CREWCAST_RELEASE_VERSION:-}" ]]; then
-    echo "${CREWCAST_RELEASE_VERSION#v}"
-    return
-  fi
   (cd "$root" && mvn -q -DforceStdout help:evaluate -Dexpression=project.version) | sed 's/-SNAPSHOT$//'
+}
+
+# jpackage-safe numeric version: CREWCAST_RELEASE_VERSION if valid, else Maven (with warning).
+packaging_resolve_version() {
+  local root="$1"
+  local maven_fallback
+  maven_fallback="$(packaging_maven_version "$root")"
+
+  if [[ -n "${CREWCAST_RELEASE_VERSION:-}" ]]; then
+    local raw="${CREWCAST_RELEASE_VERSION#v}"
+    raw="${raw%%-*}"
+    if [[ "$raw" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
+      echo "$raw"
+      return
+    fi
+    echo "WARNING: CREWCAST_RELEASE_VERSION='${CREWCAST_RELEASE_VERSION}' is not a valid numeric version; using Maven fallback ${maven_fallback}." >&2
+  else
+    echo "WARNING: No valid CREWCAST_RELEASE_VERSION; using Maven fallback ${maven_fallback}." >&2
+  fi
+  echo "$maven_fallback"
 }
 
 # macOS jpackage: major version must be >= 1.
