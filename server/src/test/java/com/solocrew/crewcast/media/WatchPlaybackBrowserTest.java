@@ -53,6 +53,9 @@ class WatchPlaybackBrowserTest extends CrewcastSpringTestBase {
 
     @DynamicPropertySource
     static void fixtures(DynamicPropertyRegistry registry) throws Exception {
+        if (!FfmpegTestSupport.ffmpegAndFfprobeAvailable()) {
+            return;
+        }
         if (hevcFixture == null) {
             hevcFixture = MediaTestFixtures.coverArt();
         }

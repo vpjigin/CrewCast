@@ -16,6 +16,11 @@
   </div>
   <div id="video-error" class="notice error-notice" hidden></div>
   <div id="hevc-notice" class="notice" hidden></div>
+  <div id="compat-hint" class="notice" hidden>
+    <span>Picture not showing? Try compatibility mode (H.264 for TVs).</span>
+    <button id="compat-hint-enable" class="ctrl" type="button">Enable</button>
+    <button id="compat-hint-dismiss" class="ctrl" type="button" aria-label="Dismiss">×</button>
+  </div>
   <div id="audio-picker-overlay" hidden>
     <div id="audio-picker-panel">
       <h2 id="audio-picker-title">Choose audio language</h2>
@@ -39,6 +44,9 @@
       <span id="captions-notice" class="captions-notice" hidden></span>
     </div>
     <div class="top-bar-actions">
+      <label id="compat-toggle-wrap" class="ctrl compat-toggle" hidden title="Convert to H.264 for TVs and older browsers">
+        <input type="checkbox" id="compat-toggle"> Compatibility
+      </label>
       <select id="speed-select" class="ctrl" aria-label="Playback speed">
         <option value="0.5">0.5x</option>
         <option value="1" selected>1x</option>
@@ -85,6 +93,7 @@
 <video id="thumb-video" src="" muted playsinline preload="auto"></video>
 <canvas id="thumb-canvas"></canvas>
 </body>
+<script src="/player/player-compat.js"></script>
 <script src="/player/player-audio.js"></script>
 <script src="/player/player-subtitles.js"></script>
 <script src="/player/player.js"></script>

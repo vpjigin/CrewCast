@@ -8,14 +8,15 @@ public record ProbedMedia(
         String mainVideoCodec,
         boolean hevcInBrowserWarning,
         List<AudioStreamInfo> audioTracks,
-        List<SubtitleStreamInfo> subtitleTracks) {
+        List<SubtitleStreamInfo> subtitleTracks,
+        VideoFormat video) {
 
     public ProbedMedia(
             int mainVideoAbsoluteIndex,
             String mainVideoCodec,
             boolean hevcInBrowserWarning,
             List<AudioStreamInfo> audioTracks) {
-        this(mainVideoAbsoluteIndex, mainVideoCodec, hevcInBrowserWarning, audioTracks, List.of());
+        this(mainVideoAbsoluteIndex, mainVideoCodec, hevcInBrowserWarning, audioTracks, List.of(), VideoFormat.unknown());
     }
 
     public Optional<AudioStreamInfo> audioByRelativeIndex(int audioIndex) {

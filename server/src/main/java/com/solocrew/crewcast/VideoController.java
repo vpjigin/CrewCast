@@ -2,10 +2,15 @@ package com.solocrew.crewcast;
 
 import com.solocrew.crewcast.media.AudioFixService;
 import com.solocrew.crewcast.media.AudioFixStatus;
+import com.solocrew.crewcast.media.CompatFixService;
+import com.solocrew.crewcast.media.CompatPlaybackPolicy;
+import com.solocrew.crewcast.media.CompatStatusMapper;
+import com.solocrew.crewcast.media.CompatUiState;
 import com.solocrew.crewcast.media.BrowserPlayback;
 import com.solocrew.crewcast.media.LanguageNames;
 import com.solocrew.crewcast.media.ProbedMedia;
 import com.solocrew.crewcast.media.SubtitleService;
+import com.solocrew.crewcast.media.VideoFormat;
 import com.solocrew.crewcast.settings.DefaultCaptionsMode;
 import com.solocrew.crewcast.settings.SettingsStore;
 import com.solocrew.crewcast.share.ShareRegistry;
@@ -38,16 +43,19 @@ public class VideoController {
     private final ShareRegistry shareRegistry;
     private final SettingsStore settingsStore;
     private final AudioFixService audioFixService;
+    private final CompatFixService compatFixService;
     private final SubtitleService subtitleService;
 
     public VideoController(
             ShareRegistry shareRegistry,
             SettingsStore settingsStore,
             AudioFixService audioFixService,
+            CompatFixService compatFixService,
             SubtitleService subtitleService) {
         this.shareRegistry = shareRegistry;
         this.settingsStore = settingsStore;
         this.audioFixService = audioFixService;
+        this.compatFixService = compatFixService;
         this.subtitleService = subtitleService;
     }
 
@@ -102,6 +110,18 @@ public class VideoController {
         List<SubtitleService.SubtitleDto> subtitles = subtitleService.listForApi(path);
         DefaultCaptionsMode captionsDefault = settingsStore.getSettings().getDefaultCaptions();
 
+        boolean compatRecommended = CompatPlaybackPolicy.videoNeedsCompatTranscode(media);
+        AudioFixStatus compatStatus = compatFixService.statusFor(path, selected, false);
+        boolean cacheReady = compatStatus.status() == com.solocrew.crewcast.media.AudioFixJobState.READY;
+        CompatUiState compatState = CompatStatusMapper.map(
+                settingsStore.getSettings().getPrepareCompatInAdvance(),
+                media,
+                compatFixService.isAvailable(),
+                compatStatus,
+                cacheReady);
+        boolean viewerMayPrepare = settingsStore.getSettings().isAllowViewerCompatPrepare();
+
+        VideoFormat vf = media.video() != null ? media.video() : VideoFormat.unknown();
         return ResponseEntity.ok(new VideoDetails(
                 video.id(),
                 video.displayName(),
@@ -112,7 +132,42 @@ public class VideoController {
                 media.mainVideoCodec(),
                 warning,
                 subtitles,
-                captionsDefault.name()));
+                captionsDefault.name(),
+                compatRecommended,
+                compatFixService.isAvailable(),
+                new AudioProgressDto(compatStatus.status().name(), compatStatus.progress(), compatStatus.message()),
+                vf,
+                compatState.name(),
+                viewerMayPrepare,
+                !media.audioTracks().isEmpty(),
+                vf.width(),
+                vf.height(),
+                vf.profile(),
+                vf.bitDepth()));
+    }
+
+    @GetMapping("/api/videos/{id}/compat-status")
+    public ResponseEntity<AudioProgressDto> compatStatus(
+            @PathVariable String id,
+            @RequestParam(name = "audio", defaultValue = "0") int audio) throws Exception {
+        Path path = shareRegistry.resolvePath(id).orElse(null);
+        if (path == null) {
+            return ResponseEntity.notFound().build();
+        }
+        AudioFixStatus st = compatFixService.statusFor(path, audio, true);
+        return ResponseEntity.ok(new AudioProgressDto(st.status().name(), st.progress(), st.message()));
+    }
+
+    @PostMapping("/api/videos/{id}/compat/prepare")
+    public ResponseEntity<AudioProgressDto> prepareCompat(
+            @PathVariable String id,
+            @RequestParam(name = "audio", defaultValue = "0") int audio) throws Exception {
+        Path path = shareRegistry.resolvePath(id).orElse(null);
+        if (path == null) {
+            return ResponseEntity.notFound().build();
+        }
+        AudioFixStatus st = compatFixService.prepareCompat(path, audio, true);
+        return ResponseEntity.ok(new AudioProgressDto(st.status().name(), st.progress(), st.message()));
     }
 
     @GetMapping("/api/videos/{id}/audio-status")
@@ -145,6 +200,7 @@ public class VideoController {
     public ResponseEntity<?> stream(
             @PathVariable String id,
             @RequestParam(name = "audio", required = false) Integer audio,
+            @RequestParam(name = "compat", defaultValue = "false") boolean compat,
             @RequestHeader(value = HttpHeaders.RANGE, required = false) String rangeHeader) throws Exception {
 
         Path path = shareRegistry.resolvePath(id).orElse(null);
@@ -153,13 +209,32 @@ public class VideoController {
         }
 
         ProbedMedia media = audioFixService.probe(path);
-        if (media.audioTracks().isEmpty()) {
-            return streamFile(path, rangeHeader);
+        int audioIndex = audio != null ? audio : audioFixService.defaultAudioIndex(media);
+        if (!media.audioTracks().isEmpty()) {
+            if (audioIndex < 0 || audioIndex >= media.audioTracks().size()) {
+                audioIndex = media.audioTracks().getFirst().audioIndex();
+            }
+        } else {
+            audioIndex = 0;
         }
 
-        int audioIndex = audio != null ? audio : audioFixService.defaultAudioIndex(media);
-        if (audioIndex < 0 || audioIndex >= media.audioTracks().size()) {
-            audioIndex = media.audioTracks().getFirst().audioIndex();
+        if (compat) {
+            AudioFixService.ServeResult serve = compatFixService.resolvePlayback(path, audioIndex);
+            if (serve.file().isEmpty()) {
+                AudioFixStatus st = serve.status();
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                        .header(HttpHeaders.RETRY_AFTER, "3")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(Map.of(
+                                "status", st.status().name(),
+                                "progress", st.progress(),
+                                "message", st.message() != null ? st.message() : ""));
+            }
+            return streamFile(serve.file().get(), rangeHeader);
+        }
+
+        if (media.audioTracks().isEmpty()) {
+            return streamFile(path, rangeHeader);
         }
 
         AudioFixService.ServeResult serve = audioFixService.resolvePlayback(path, audioIndex);
@@ -310,6 +385,39 @@ public class VideoController {
             String videoCodec,
             String warning,
             List<SubtitleService.SubtitleDto> subtitles,
-            String defaultCaptions) {
+            String defaultCaptions,
+            boolean compatRecommended,
+            boolean compatEncoderAvailable,
+            AudioProgressDto compat,
+            VideoFormat videoFormat,
+            String compatState,
+            boolean compatViewerPrepareAllowed,
+            boolean hasAudio,
+            int width,
+            int height,
+            String videoProfile,
+            int videoBitDepth) {
+
+        /** Same as {@link #compatRecommended()} — file may not play on TVs / older browsers without transcode. */
+        @com.fasterxml.jackson.annotation.JsonProperty("risky")
+        public boolean risky() {
+            return compatRecommended;
+        }
+
+        /** Alias for {@link #videoCodec()}. */
+        @com.fasterxml.jackson.annotation.JsonProperty("codec")
+        public String codec() {
+            return videoCodec;
+        }
+
+        @com.fasterxml.jackson.annotation.JsonProperty("profile")
+        public String profile() {
+            return videoProfile;
+        }
+
+        @com.fasterxml.jackson.annotation.JsonProperty("bitDepth")
+        public int bitDepth() {
+            return videoBitDepth;
+        }
     }
 }

@@ -1,6 +1,8 @@
 package com.solocrew.crewcast.facade;
 
 import com.solocrew.crewcast.media.AudioFixService;
+import com.solocrew.crewcast.media.CompatFixService;
+import com.solocrew.crewcast.media.CompatUiState;
 import com.solocrew.crewcast.media.FfmpegDownloadAssets;
 import com.solocrew.crewcast.media.FfmpegDownloadListener;
 import com.solocrew.crewcast.media.FfmpegDownloader;
@@ -50,6 +52,7 @@ public class SharingService implements CloudflaredListener, FfmpegDownloadListen
     private final KeepAwakeManager keepAwakeManager;
     private final ServerPortHolder portHolder;
     private final AudioFixService audioFixService;
+    private final CompatFixService compatFixService;
     private final FfmpegManager ffmpegManager;
     private final FfmpegDownloader ffmpegDownloader;
     private final SubtitleService subtitleService;
@@ -66,6 +69,7 @@ public class SharingService implements CloudflaredListener, FfmpegDownloadListen
             KeepAwakeManager keepAwakeManager,
             ServerPortHolder portHolder,
             AudioFixService audioFixService,
+            CompatFixService compatFixService,
             FfmpegManager ffmpegManager,
             FfmpegDownloader ffmpegDownloader,
             SubtitleService subtitleService) {
@@ -78,6 +82,7 @@ public class SharingService implements CloudflaredListener, FfmpegDownloadListen
         this.keepAwakeManager = keepAwakeManager;
         this.portHolder = portHolder;
         this.audioFixService = audioFixService;
+        this.compatFixService = compatFixService;
         this.ffmpegManager = ffmpegManager;
         this.ffmpegDownloader = ffmpegDownloader;
         this.subtitleService = subtitleService;
@@ -88,6 +93,13 @@ public class SharingService implements CloudflaredListener, FfmpegDownloadListen
         cloudflaredManager.addListener(this);
         ffmpegDownloader.addListener(this);
         cloudflaredManager.setProtocol(settingsStore.getSettings().getTunnelProtocol());
+        compatFixService.addProgressListener(this::notifyCompatPrepChanged);
+    }
+
+    private void notifyCompatPrepChanged() {
+        for (SharingUiListener l : listeners) {
+            l.onCompatPrepChanged();
+        }
     }
 
     public FfmpegDownloadAssets.Plan ffmpegDownloadPlan() {
@@ -211,29 +223,57 @@ public class SharingService implements CloudflaredListener, FfmpegDownloadListen
     public void saveSettings(AppSettings settings) {
         settingsStore.update(settings);
         cloudflaredManager.setProtocol(settings.getTunnelProtocol());
+        compatFixService.scheduleAutoPrepareScan();
     }
 
     public void addFolder(Path folder) throws IOException {
         shareRegistry.addFolder(folder);
+        compatFixService.scheduleAutoPrepareScan();
     }
 
     public void addFile(Path file) throws IOException {
         shareRegistry.addFile(file);
+        compatFixService.scheduleAutoPrepareScan();
     }
 
     public void removeShare(int index) {
         List<ShareEntry> before = shareRegistry.listShareEntries();
         if (index >= 0 && index < before.size()) {
-            audioFixService.onShareRemoved(Path.of(before.get(index).getPath()));
+            Path root = Path.of(before.get(index).getPath());
+            audioFixService.onShareRemoved(root);
+            compatFixService.onShareRemoved(root);
         }
         shareRegistry.removeShare(index);
     }
 
     public void removeAllShares() {
         for (ShareEntry e : shareRegistry.listShareEntries()) {
-            audioFixService.onShareRemoved(Path.of(e.getPath()));
+            Path root = Path.of(e.getPath());
+            audioFixService.onShareRemoved(root);
+            compatFixService.onShareRemoved(root);
         }
         shareRegistry.clearAllShares();
+    }
+
+    public boolean isCompatEncoderAvailable() {
+        return compatFixService.isAvailable();
+    }
+
+    public void prepareCompatForShareEntry(ShareEntry entry) throws Exception {
+        Path path = Path.of(entry.getPath());
+        if (entry.getKind() == ShareEntry.Kind.FILE) {
+            compatFixService.prepareHostDefaultTrack(path);
+        } else {
+            compatFixService.prepareAllNeedingUnder(path);
+        }
+    }
+
+    public void prepareAllCompatForFolder(ShareEntry entry) throws Exception {
+        compatFixService.prepareAllVideosUnder(Path.of(entry.getPath()));
+    }
+
+    public void cancelCompatForPath(Path videoPath) throws Exception {
+        compatFixService.cancelForVideo(videoPath);
     }
 
     public List<ShareListItem> listShares() {
@@ -242,15 +282,79 @@ public class SharingService implements CloudflaredListener, FfmpegDownloadListen
         for (int i = 0; i < entries.size(); i++) {
             ShareEntry e = entries.get(i);
             int videos = countVideosInShare(e);
+            String compatSummary = videos > 0 ? compatFixService.summarizeForShare(e) : "";
+            CompatUiState fileState = CompatUiState.NOT_NEEDED;
+            int fileProgress = 0;
+            String fileTooltip = "";
+            boolean canPrepare = false;
+            boolean canCancel = false;
+            List<ShareVideoCompatRow> folderVideos = List.of();
+            try {
+                if (e.getKind() == ShareEntry.Kind.FILE && ShareRegistry.isVideoFileName(Path.of(e.getPath()).getFileName().toString())) {
+                    Path vp = Path.of(e.getPath());
+                    fileState = compatFixService.uiStateForDefaultTrack(vp);
+                    fileTooltip = compatFixService.tooltipForDefaultTrack(vp);
+                    fileProgress = compatProgressFor(vp);
+                    canPrepare = canPrepareCompat(fileState, compatFixService.isAvailable());
+                    canCancel = canCancelCompat(fileState);
+                } else if (e.getKind() == ShareEntry.Kind.FOLDER) {
+                    folderVideos = listFolderVideoCompatRows(e);
+                }
+            } catch (Exception ignored) {
+                fileState = CompatUiState.UNAVAILABLE;
+                fileTooltip = CompatFixService.NO_ENCODER_MESSAGE;
+            }
             out.add(new ShareListItem(
                     i,
                     e,
                     describeShare(e),
                     videos > 0 ? audioFixService.summarizeForShare(e) : "",
                     subtitleService.summarizeForShare(e),
-                    audioFixService.hevcWarningForShare(e)));
+                    audioFixService.hevcWarningForShare(e),
+                    compatSummary,
+                    fileState,
+                    fileProgress,
+                    fileTooltip,
+                    canPrepare,
+                    canCancel,
+                    folderVideos));
         }
         return out;
+    }
+
+    private List<ShareVideoCompatRow> listFolderVideoCompatRows(ShareEntry folder) throws Exception {
+        List<ShareVideoCompatRow> rows = new ArrayList<>();
+        for (Path v : shareRegistry.listVideosUnder(Path.of(folder.getPath()))) {
+            CompatUiState state = compatFixService.uiStateForDefaultTrack(v);
+            String tooltip = compatFixService.tooltipForDefaultTrack(v);
+            int progress = compatProgressFor(v);
+            rows.add(new ShareVideoCompatRow(
+                    v,
+                    v.getFileName().toString(),
+                    state,
+                    progress,
+                    tooltip,
+                    canPrepareCompat(state, compatFixService.isAvailable()),
+                    canCancelCompat(state)));
+        }
+        return rows;
+    }
+
+    private int compatProgressFor(Path video) throws Exception {
+        return compatFixService.progressForDefaultTrack(video);
+    }
+
+    private static boolean canPrepareCompat(CompatUiState state, boolean encoderAvailable) {
+        if (!encoderAvailable) {
+            return false;
+        }
+        return state != CompatUiState.READY
+                && state != CompatUiState.QUEUED
+                && state != CompatUiState.CONVERTING;
+    }
+
+    private static boolean canCancelCompat(CompatUiState state) {
+        return state == CompatUiState.QUEUED || state == CompatUiState.CONVERTING;
     }
 
     public boolean hasShares() {
@@ -277,6 +381,7 @@ public class SharingService implements CloudflaredListener, FfmpegDownloadListen
             cloudflaredManager.start(portHolder.getPort());
         }
         audioFixService.onSharingStarted();
+        compatFixService.onSharingStarted();
         notifySharingChanged(true);
         notifyViewersChanged();
     }
@@ -286,6 +391,7 @@ public class SharingService implements CloudflaredListener, FfmpegDownloadListen
         cloudflaredManager.stop();
         keepAwakeManager.stop();
         audioFixService.onSharingStopped();
+        compatFixService.onSharingStopped();
         notifySharingChanged(false);
         notifyViewersChanged();
     }
