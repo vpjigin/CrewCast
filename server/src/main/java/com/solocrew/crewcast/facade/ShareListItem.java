@@ -8,5 +8,12 @@ public record ShareListItem(
         String meta,
         String audioMeta,
         String subtitleMeta,
-        boolean hevcWarning) {
+        boolean hevcWarning,
+        String compatSummary,
+        com.solocrew.crewcast.media.CompatUiState fileCompatState,
+        int fileCompatProgress,
+        String fileCompatTooltip,
+        boolean fileCompatCanPrepare,
+        boolean fileCompatCanCancel,
+        java.util.List<ShareVideoCompatRow> folderVideos) {
 }

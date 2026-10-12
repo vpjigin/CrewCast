@@ -25,6 +25,11 @@ public final class FfmpegTestSupport {
         return ffmpeg.isPresent() && ffprobe.isPresent();
     }
 
+    /** Resolved ffmpeg binary for tests (same search order as {@link FfmpegManager}). */
+    public static Optional<Path> ffmpegPath() {
+        return locate("ffmpeg").filter(FfmpegManager::commandWorks);
+    }
+
     public static boolean ffmpegDownloadE2eEnabled() {
         return Boolean.getBoolean("crewcast.ffmpeg.e2e");
     }

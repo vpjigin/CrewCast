@@ -34,4 +34,7 @@ public interface SharingUiListener {
 
     default void onViewersChanged(List<ViewerView> viewers) {
     }
+
+    default void onCompatPrepChanged() {
+    }
 }

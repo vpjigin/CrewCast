@@ -8,6 +8,7 @@ import com.solocrew.crewcast.facade.SharingService;
 import com.solocrew.crewcast.settings.AppSettings;
 import com.solocrew.crewcast.settings.DefaultCaptionsMode;
 import com.solocrew.crewcast.settings.PrepareAudioMode;
+import com.solocrew.crewcast.settings.PrepareCompatMode;
 import net.miginfocom.swing.MigLayout;
 
 import javax.swing.BorderFactory;
@@ -191,6 +192,21 @@ class SettingsDialog extends JDialog {
         });
         body.add(clearCache, "gapleft 4, gaptop 2, wrap");
 
+        JComboBox<PrepareCompatMode> prepareCompat = addChoiceRow(body, "TV / projector compatible versions",
+                "Pre-make H.264 + AAC copies on this computer so TVs and projectors can start instantly. "
+                        + "Uses the same cache limit as audio conversions.",
+                PrepareCompatMode.values(), workingCopy.getPrepareCompatInAdvance());
+        prepareCompat.setEnabled(sharingService.isFfmpegAvailable());
+
+        JComboBox<String> compatHeight = addChoiceRow(body, "Maximum height (TV version)",
+                "Scale video down to this height while keeping aspect ratio",
+                new String[]{"1080p", "720p"},
+                workingCopy.getCompatMaxHeight() <= 720 ? "720p" : "1080p");
+
+        ToggleSwitch allowViewerCompat = addToggleRow(body, "Allow viewers to start conversions",
+                "When off, only versions you prepare on this computer are available in the web player",
+                workingCopy.isAllowViewerCompatPrepare());
+
         JComboBox<Integer> thumbCount = addChoiceRow(body, "Chapter thumbnails",
                 "How many frames the jump grid shows",
                 new Integer[]{20, 16, 12, 8}, workingCopy.getThumbnailCount());
@@ -248,6 +264,9 @@ class SettingsDialog extends JDialog {
             workingCopy.setPreferredAudioLanguage((String) audioLang.getSelectedItem());
             workingCopy.setDefaultCaptions((DefaultCaptionsMode) defaultCaptions.getSelectedItem());
             workingCopy.setAudioCacheMaxGb((Integer) cacheGb.getSelectedItem());
+            workingCopy.setPrepareCompatInAdvance((PrepareCompatMode) prepareCompat.getSelectedItem());
+            workingCopy.setCompatMaxHeight("720p".equals(compatHeight.getSelectedItem()) ? 720 : 1080);
+            workingCopy.setAllowViewerCompatPrepare(allowViewerCompat.isSelected());
             workingCopy.setThumbnailCount((Integer) thumbCount.getSelectedItem());
             workingCopy.setKeepComputerAwake(keepAwake.isSelected());
             workingCopy.setOpenAtLogin(openLogin.isSelected());
@@ -364,6 +383,9 @@ class SettingsDialog extends JDialog {
         copy.setOpenAtLogin(s.isOpenAtLogin());
         copy.setFixAudioForBrowsers(s.isFixAudioForBrowsers());
         copy.setPrepareAudioInAdvance(s.getPrepareAudioInAdvance());
+        copy.setPrepareCompatInAdvance(s.getPrepareCompatInAdvance());
+        copy.setCompatMaxHeight(s.getCompatMaxHeight());
+        copy.setAllowViewerCompatPrepare(s.isAllowViewerCompatPrepare());
         copy.setAudioCacheMaxGb(s.getAudioCacheMaxGb());
         copy.setChapterThumbnails(s.isChapterThumbnails());
         copy.setCloudflaredBinaryPath(s.getCloudflaredBinaryPath());
