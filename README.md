@@ -54,11 +54,12 @@ Paid code signing is planned if the project is used widely; the source and the r
 ## Features
 
 - **Public link** — HTTPS via a Cloudflare Quick Tunnel (automatic in the desktop app), plus a **Wi‑Fi link**, **QR code**, and copy buttons
-- **Folder and file sharing** — add libraries or individual videos; rescans on each request (no restart when files change on disk); viewers can **Download all** on the web page as a zip of the current folder
+- **Folder and file sharing** — add libraries or individual files on the host; rescans on each request (no restart when files change on disk)
+- **Web library** — browse shared folders (breadcrumbs and back); tap any file for a popup with **Download**, **Watch** (videos), or **View** (images); **Download all** streams the current folder as a zip — zips are streamed with no total size limit, but a single download is limited to 10,000 files (configurable with `crewcast.download-all.max-entries`) and 2 concurrent downloads
 - **Viewer list** — see who is watching (in memory only, not saved to disk)
 - **Stay awake** — optional keep-awake while sharing is on (desktop)
 - **Audio fix** — remux/transcode for browser playback (MKV, E‑AC3, AC3, DTS, etc.) with a per-video **language / track picker**
-- **Compatibility mode** — optional H.264 + AAC conversion for TVs, projectors, and other browsers that cannot decode 10‑bit HEVC or exotic codecs (see [TVs and projectors](#tvs-and-projectors))
+- **TV / projector compatibility mode** — optional H.264 + AAC conversion for devices that cannot decode 10‑bit HEVC or exotic codecs (web player toggle and/or host prep in Settings; see [TVs and projectors](#tvs-and-projectors))
 - **Subtitles** — embedded and sidecar text tracks as WebVTT in the player
 - **Chapter thumbnails** — scrubbing grid (default 20 tiles) to jump through long videos
 - **Access key** — a private `?t=` token per sharing session; **New link** rotates it
@@ -105,7 +106,7 @@ Installers are **unsigned**. **macOS** Gatekeeper and **Windows** SmartScreen ma
 
 ## How sharing works
 
-Shared folders expose **every file type** for download; the web library can **view photos and videos in the browser** only — other types download to the device. **Hidden files** (names starting with `.`, OS-hidden, `.git`, `node_modules`, and junk like `.DS_Store`) are skipped when scanning folders.
+Shared folders expose **every file type** for download. On the web library you can **browse subfolders**, open a popup on any file (**Download**; **Watch** or **View** for videos and images), and **watch** videos or **view** photos in the browser — other types download to the device. **Hidden files** (names starting with `.`, OS-hidden, `.git`, `node_modules`, and junk like `.DS_Store`) are skipped when scanning folders.
 
 | Link | What it is |
 |------|------------|
@@ -152,19 +153,19 @@ Headless mode prints **LAN** and **Public** URLs when ready. Press **Ctrl+C** to
 
 Many **built-in TV and projector browsers** play **AAC audio** from MKV/MP4 but show a **black or blocky picture** when the video is **10‑bit HEVC (x265)**, high H.264 profiles, or other codecs the chip cannot decode.
 
-**Compatibility mode** (toggle in the web player, or enabled automatically on TV-like browsers when the file looks risky) streams a cached **MP4** with **8‑bit H.264 (yuv420p, High profile)** and **AAC**, scaled to at most **1080p** or **720p** (Settings → **Maximum height**). **Download** always serves the **original file**.
+Crewcast can **convert those files to 8‑bit H.264 + AAC** automatically in the **web player** (compatibility toggle, or auto-enabled on TV-like browsers when the file looks risky) or **ahead of time on the host** (Settings below). The converted stream is a cached **MP4** (**yuv420p**, High profile), scaled to at most **1080p** or **720p** (Settings → **Maximum height (TV version)**). **Download** always serves the **original file**.
 
 In the **desktop app → Settings → Playback** you can **pre-make TV versions** before anyone watches:
 
 | Setting | Meaning |
 |---------|---------|
-| **TV / projector compatible versions** | **Off** · **Only files that need it** (HEVC, 10‑bit, etc.) · **All videos** |
-| **Maximum height** | 1080p or 720p for the converted copy |
+| **TV / projector compatible versions** | **Off** · **Only files that need it** · **All videos** |
+| **Maximum height (TV version)** | 1080p or 720p for the converted copy |
 | **Allow viewers to start conversions** | When off, viewers only get versions you prepared on the host |
 
 The share list shows a small **status icon** per video (and per file inside shared folders): not needed · queued · converting · ready · cannot convert. Use the **TV** menu on a row to **Prepare TV version** or **Cancel**. Folder rows include a summary such as “TV version: 2 ready, 1 converting 43%”.
 
-- **Hardware encoder required** — the bundled ffmpeg is an LGPL build **without libx264**. Crewcast picks a **hardware H.264 encoder** on your OS (e.g. VideoToolbox on Mac, NVENC/QSV/AMF on Windows, VAAPI/NVENC on Linux). If none works, the desktop app and web player show a clear error; use **VLC** on the TV if needed.
+- **Hardware encoder required** — the bundled ffmpeg is an LGPL build **without libx264**. Crewcast picks a **hardware H.264 encoder** on your OS (VideoToolbox on macOS, NVENC/QSV/AMF on Windows, VAAPI/NVENC/QSV on Linux). If none is available, **browser-safe files still play as the original**; files that would need a TV version show **why conversion is unavailable** in the share list and web player (compatibility mode stays off or disabled). Use **VLC** on the TV if the built-in browser cannot decode the original.
 - **First conversion takes time** — one cached copy per file (default audio track). Other audio tracks are still converted on demand. Cache lives under `~/.crewcast/cache/` (same size limit as audio conversions).
 - **Subtitles, chapters, seeking, and audio track selection** work in compatibility mode the same as direct play.
 
@@ -214,7 +215,7 @@ Dark-themed full-screen player at `/watch/{id}`:
 - **Chapters** — grid of thumbnails across the timeline (count from Settings, default 20); first open may take a few seconds while frames are captured
 - Controls auto-hide while playing; tap or move the pointer to show them again
 
-Home page `/` lists all shared files in a grid (requires a valid access key when sharing is on and the key is required). Tap a file for preview, download, or in-browser viewing of images and videos.
+Home page `/` lists shared files and folders in a grid (requires a valid access key when sharing is on and the key is required). Tap a file to open the popup (**Watch**, **View**, or **Download**); videos open the player at `/watch/{id}`.
 
 ---
 
@@ -285,7 +286,9 @@ Data directory: `~/.crewcast/` (settings, cache, optional `bin/` for cloudflared
 | Endpoint | Purpose |
 |----------|---------|
 | `GET /` | Home page (shared file grid) |
-| `GET /api/files` | JSON list of shared files (kind, size, modified time) |
+| `GET /api/browse` | JSON folder listing (subfolders + files for the share root or `?folder=`) |
+| `GET /api/files` | Flat JSON list of shared files (kind, size, modified time) |
+| `GET /api/download-all` | Streamed zip of the current folder or entire share (`?folder=` optional) |
 | `GET /file/{id}?download=1` | Download a shared file (`Content-Disposition: attachment`) |
 | `GET /watch/{id}` | Player page |
 | `GET /stream/{id}` | Range-request video stream (`?audio=N`, `?t=` when required) |
