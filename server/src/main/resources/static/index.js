@@ -33,6 +33,7 @@
   var modalNoPreview = document.getElementById('modal-no-preview');
   var noPreviewExt = document.getElementById('no-preview-ext');
   var btnView = document.getElementById('btn-view');
+  var btnViewLabel = document.getElementById('btn-view-label');
   var btnDownload = document.getElementById('btn-download');
   var btnClose = document.getElementById('modal-close');
   var btnBackdrop = document.getElementById('modal-backdrop');
@@ -124,6 +125,24 @@
 
   function canView(f) {
     return f.viewable && (isVideo(f) || isImage(f));
+  }
+
+  function viewActionLabel(f) {
+    return isVideo(f) ? 'Watch' : 'View';
+  }
+
+  function viewActionDescription(f) {
+    if (isVideo(f)) return 'Watch ' + f.name;
+    if (isImage(f)) return 'View ' + f.name;
+    return 'View';
+  }
+
+  function updateViewActionButton(f) {
+    if (!btnViewLabel) return;
+    var label = viewActionLabel(f);
+    btnViewLabel.textContent = label;
+    btnView.setAttribute('aria-label', viewActionDescription(f));
+    btnView.setAttribute('title', viewActionDescription(f));
   }
 
   function watchUrl(id) {
@@ -335,6 +354,9 @@
     modalPreview.hidden = !showView;
     modalNoPreview.hidden = showView;
     btnView.hidden = !showView;
+    if (showView) {
+      updateViewActionButton(f);
+    }
 
     if (showView) {
       previewFrame.innerHTML = '';
