@@ -210,7 +210,7 @@
         if (ctx.onFail) ctx.onFail({ message: compatUnavailableMessage() });
         return true;
       }
-      if (!encoderAvailable) {
+      if (!encoderAvailable && risky) {
         if (ctx.onFail) ctx.onFail({ message: compatUnavailableMessage() });
         return true;
       }
@@ -241,7 +241,7 @@
         if (ctx.onFailed) ctx.onFailed({ message: compatUnavailableMessage() });
         return true;
       }
-      if (!encoderAvailable) {
+      if (!encoderAvailable && risky) {
         if (ctx.onFailed) ctx.onFailed({ message: compatUnavailableMessage() });
         return true;
       }
@@ -298,6 +298,9 @@
       viewerMayPrepare = data.compatViewerPrepareAllowed !== false;
       encoderAvailable = data.compatEncoderAvailable !== false;
       hostCompatState = data.compatState || (data.compat && data.compat.status) || 'NEEDED';
+      if (!risky && String(hostCompatState).toUpperCase() === 'UNAVAILABLE') {
+        hostCompatState = 'NOT_NEEDED';
+      }
 
       return decodingInfoForFile(data, dims).then(function(decode){
         var perVideo = readLs(lsVideoKey(id));

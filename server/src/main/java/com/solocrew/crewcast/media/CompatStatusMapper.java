@@ -13,9 +13,6 @@ public final class CompatStatusMapper {
             boolean encoderAvailable,
             AudioFixStatus jobStatus,
             boolean cacheReady) {
-        if (!encoderAvailable) {
-            return CompatUiState.UNAVAILABLE;
-        }
         if (cacheReady || jobStatus.status() == AudioFixJobState.READY) {
             return CompatUiState.READY;
         }
@@ -27,6 +24,12 @@ public final class CompatStatusMapper {
         }
         if (jobStatus.status() == AudioFixJobState.RUNNING) {
             return CompatUiState.CONVERTING;
+        }
+        if (!encoderAvailable) {
+            if (!CompatPlaybackPolicy.videoNeedsCompatTranscode(media)) {
+                return CompatUiState.NOT_NEEDED;
+            }
+            return CompatUiState.UNAVAILABLE;
         }
         if (CompatPreparePolicy.videoMarkedNotNeeded(mode, media)) {
             return CompatUiState.NOT_NEEDED;
