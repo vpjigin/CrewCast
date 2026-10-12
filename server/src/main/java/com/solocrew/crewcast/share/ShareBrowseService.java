@@ -123,7 +123,7 @@ public class ShareBrowseService {
         return out;
     }
 
-    private Optional<LocatedFolder> locateFolder(String folderId) throws IOException {
+    public Optional<LocatedFolder> locateFolder(String folderId) throws IOException {
         for (ShareEntry share : settingsStore.getSettings().getShares()) {
             if (share.getKind() != ShareEntry.Kind.FOLDER) {
                 continue;
@@ -251,7 +251,7 @@ public class ShareBrowseService {
         };
     }
 
-    private record LocatedFolder(Path directory, Path shareRoot) {
+    public record LocatedFolder(Path directory, Path shareRoot) {
     }
 
     public record BrowseResponse(

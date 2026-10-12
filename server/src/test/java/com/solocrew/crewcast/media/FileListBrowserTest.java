@@ -109,6 +109,8 @@ class FileListBrowserTest extends CrewcastSpringTestBase {
 
             page.locator(".folder-card").first().click();
             page.waitForSelector(".file-card:not(.folder-card)");
+            page.waitForSelector("#btn-download-all:not([hidden])");
+            assertTrue(page.locator("#btn-download-all").isVisible());
             page.locator(".file-card:not(.folder-card)").filter(new Locator.FilterOptions().setHasText("Sample.mp4")).click();
             page.locator("#modal").waitFor(new Locator.WaitForOptions().setState(WaitForSelectorState.VISIBLE));
             page.locator("#modal").getByRole(AriaRole.BUTTON, new Locator.GetByRoleOptions().setName("Watch")).click();

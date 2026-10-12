@@ -54,7 +54,7 @@ Paid code signing is planned if the project is used widely; the source and the r
 ## Features
 
 - **Public link** — HTTPS via a Cloudflare Quick Tunnel (automatic in the desktop app), plus a **Wi‑Fi link**, **QR code**, and copy buttons
-- **Folder and file sharing** — add libraries or individual videos; rescans on each request (no restart when files change on disk)
+- **Folder and file sharing** — add libraries or individual videos; rescans on each request (no restart when files change on disk); viewers can **Download all** on the web page as a zip of the current folder
 - **Viewer list** — see who is watching (in memory only, not saved to disk)
 - **Stay awake** — optional keep-awake while sharing is on (desktop)
 - **Audio fix** — remux/transcode for browser playback (MKV, E‑AC3, AC3, DTS, etc.) with a per-video **language / track picker**
