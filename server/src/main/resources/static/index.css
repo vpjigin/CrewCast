@@ -13,8 +13,11 @@ a{color:inherit}
 
 .main{width:100%;max-width:1200px;margin:0 auto;padding:40px 32px 64px;display:flex;flex-direction:column;gap:28px}
 .hero{display:flex;flex-direction:column;gap:6px}
+.hero-head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:12px 16px}
+.hero-text{display:flex;flex-direction:column;gap:6px;min-width:0;flex:1 1 200px}
 .hero-kicker{font-size:13px;color:#9AA3B2;font-family:'JetBrains Mono',monospace}
 .hero h1{margin:0;font-size:34px;font-weight:700;letter-spacing:-0.02em}
+.btn-download-all{flex-shrink:0;align-self:center;text-decoration:none;white-space:nowrap}
 .hero-lead{font-size:15px;color:#9AA3B2;line-height:1.45;max-width:640px}
 
 .browse-nav{display:flex;flex-wrap:wrap;align-items:center;gap:12px 16px;margin:-8px 0 4px}
@@ -86,6 +89,7 @@ a{color:inherit}
   .app-header{padding:16px}
   .main{padding:20px 16px 48px}
   .hero h1{font-size:26px}
+  .btn-download-all{width:100%;justify-content:center;text-align:center}
   .file-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
   .file-thumb{height:96px}
   .modal-root{align-items:flex-end;padding:0}

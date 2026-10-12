@@ -37,6 +37,10 @@
     }
     var t = pageToken();
     if (t) q.push('t=' + encodeURIComponent(t));
+    if (window.__crewcastCompat && window.__crewcastCompat.streamExtras) {
+      var extra = window.__crewcastCompat.streamExtras();
+      if (extra && extra.length) q = q.concat(extra);
+    }
     if (q.length) url += '?' + q.join('&');
     return url;
   }
@@ -60,7 +64,7 @@
     if (el) { el.textContent = ''; el.hidden = true; }
   }
 
-  function bindVideoErrors(video){
+  function bindVideoErrors(video, ctx){
     if (!video || video.__crewcastErrBound) return;
     video.__crewcastErrBound = true;
     video.addEventListener('error', function(){
@@ -70,9 +74,34 @@
         showVideoError('Playback failed (unknown media error).');
         return;
       }
+      if (window.__crewcastCompat && window.__crewcastCompat.onPlaybackError) {
+        var retried = window.__crewcastCompat.onPlaybackError(e.code, {
+          onToggle: ctx.onCompatToggle,
+          restartPlayback: ctx.restartPlayback
+        });
+        if (retried) return;
+      }
       var codes = {1:'MEDIA_ERR_ABORTED',2:'MEDIA_ERR_NETWORK',3:'MEDIA_ERR_DECODE',4:'MEDIA_ERR_SRC_NOT_SUPPORTED'};
-      showVideoError('Playback failed: ' + (codes[e.code] || ('code ' + e.code)) +
-        (e.message ? ' — ' + e.message : '') + '. Try refreshing or switching audio track.');
+      var msg = 'Playback failed: ' + (codes[e.code] || ('code ' + e.code)) +
+        (e.message ? ' — ' + e.message : '') + '.';
+      if (e.code === 3 || e.code === 4) {
+        if (window.__crewcastCompat && !window.__crewcastCompat.isActive()) {
+          var canAuto = window.__crewcastCompat.canAutoEnableAfterError
+            && window.__crewcastCompat.canAutoEnableAfterError();
+          if (!canAuto && window.__crewcastCompat.compatUnavailableMessage) {
+            msg += ' ' + window.__crewcastCompat.compatUnavailableMessage();
+          } else if (!canAuto) {
+            msg += ' Try refreshing.';
+          }
+        }
+      } else {
+        msg += ' Try refreshing.';
+      }
+      var multiAudio = ctx.multiAudioTracks;
+      if ((e.code === 3 || e.code === 4) && multiAudio) {
+        msg += ' You can also try switching audio track.';
+      }
+      showVideoError(msg);
     });
   }
 
@@ -105,7 +134,33 @@
       }
       var video = document.getElementById('video');
       var thumbVideo = document.getElementById('thumb-video');
-      bindVideoErrors(video);
+
+      function restartPlaybackAtCurrentTrack(autoplay){
+        var idx = activeAudioIdx != null ? activeAudioIdx : (data.selectedAudio || 0);
+        attachWhenReady(idx, autoplay !== false);
+      }
+
+      var multiAudioTracks = data.audioTracks && data.audioTracks.length > 1;
+      bindVideoErrors(video, {
+        multiAudioTracks: multiAudioTracks,
+        onCompatToggle: function(){ restartPlaybackAtCurrentTrack(false); },
+        restartPlayback: function(){ restartPlaybackAtCurrentTrack(false); }
+      });
+
+      var compatReady = window.__crewcastCompat
+        ? window.__crewcastCompat.init({
+            data: data,
+            id: id,
+            video: video,
+            withToken: withToken,
+            fetchOpts: fetchOpts,
+            showVideoError: showVideoError,
+            onToggle: function(){
+              restartPlaybackAtCurrentTrack(false);
+            }
+          })
+        : Promise.resolve();
+      compatReady = compatReady || Promise.resolve();
 
       var tracksByIndex = {};
       (data.audioTracks || []).forEach(function(tr){ tracksByIndex[tr.index] = tr; });
@@ -220,7 +275,8 @@
         return function(){ stopped = true; };
       }
 
-      var hasAudioTracks = data.audioTracks && data.audioTracks.length > 0;
+      var hasAudioTracks = data.hasAudio === true
+        || (data.audioTracks && data.audioTracks.length > 0);
 
       function applyStreamToVideo(idx, autoplay){
         clearVideoError();
@@ -263,13 +319,27 @@
           applyStreamToVideo(idx, autoplay);
         }
 
-        var tr = tracksByIndex[idx];
-        if (!tr || tr.ready || tr.browserPlayable) {
-          startPlayback();
-          return;
-        }
+        function runAttach(){
+          var tr = tracksByIndex[idx];
+          if (window.__crewcastCompat && window.__crewcastCompat.isActive()) {
+            window.__crewcastCompat.prepareIfNeeded(idx, {
+              id: id,
+              withToken: withToken,
+              fetchOpts: fetchOpts,
+              showPrep: showPrep,
+              startPlayback: startPlayback,
+              onFail: onFail || function failed(st){
+                showVideoError(st.message || 'Compatibility conversion failed');
+              }
+            });
+            return;
+          }
+          if (!tr || tr.ready || tr.browserPlayable) {
+            startPlayback();
+            return;
+          }
 
-        postPrepare(idx).then(function(st){
+          postPrepare(idx).then(function(st){
           if (st.status === 'READY') {
             startPlayback();
             return;
@@ -278,10 +348,13 @@
           stopPoll = pollUntilReady(idx, startPlayback, onFail || function failed(st){
             showVideoError(st.message || 'Audio preparation failed');
           });
-        }).catch(function(){
-          if (onFail) onFail({ message: 'Could not start audio preparation' });
-          else showVideoError('Could not start audio preparation');
-        });
+          }).catch(function(){
+            if (onFail) onFail({ message: 'Could not start audio preparation' });
+            else showVideoError('Could not start audio preparation');
+          });
+        }
+
+        compatReady.then(function(){ runAttach(); });
       }
 
       function startPlaybackForTrack(idx, autoplay){
@@ -320,6 +393,21 @@
           showVideoError(message || 'Could not switch audio track.');
         }
 
+        if (window.__crewcastCompat && window.__crewcastCompat.isActive()) {
+          pendingSwitch = { targetIdx: idx, savedTime: savedTime, wasPlaying: wasPlaying };
+          window.__crewcastCompat.prepareForSwitch(idx, {
+            id: id,
+            withToken: withToken,
+            fetchOpts: fetchOpts,
+            showPrep: showPrep,
+            onReady: completeSwitch,
+            onFailed: function(st){
+              abortSwitch(st.message || 'Compatibility conversion failed');
+            }
+          });
+          return;
+        }
+
         var tr = tracksByIndex[idx];
         if (tr && tr.ready) {
           pendingSwitch = { targetIdx: idx, savedTime: savedTime, wasPlaying: wasPlaying };
@@ -343,7 +431,7 @@
 
       window.__crewcastSwitchAudio = switchAudio;
 
-      if (audioSelect && data.audioTracks && data.audioTracks.length > 1) {
+      if (audioSelect && data.audioTracks && data.audioTracks.length >= 1) {
         audioSelect.hidden = false;
         data.audioTracks.forEach(function(tr){
           var opt = document.createElement('option');
@@ -360,14 +448,30 @@
         });
       }
 
-      if (!data.audioTracks || data.audioTracks.length === 0) {
+      if (!hasAudioTracks) {
         if (audioSelect) {
           audioSelect.hidden = true;
           audioSelect.innerHTML = '';
         }
         if (audioNone) audioNone.hidden = false;
-        applyStreamToVideo(null, false);
-        video.play().catch(function(){});
+        compatReady.then(function(){
+          if (window.__crewcastCompat && window.__crewcastCompat.isActive()) {
+            window.__crewcastCompat.prepareIfNeeded(0, {
+              id: id,
+              withToken: withToken,
+              fetchOpts: fetchOpts,
+              showPrep: showPrep,
+              startPlayback: function(){
+                applyStreamToVideo(null, false);
+                video.play().catch(function(){});
+              },
+              onFail: function(st){ showVideoError(st.message || 'Compatibility conversion failed'); }
+            });
+          } else {
+            applyStreamToVideo(null, false);
+            video.play().catch(function(){});
+          }
+        });
         if (!data.chaptersEnabled) {
           var btn0 = document.getElementById('btn-chapters');
           var overlay0 = document.getElementById('chapter-overlay');
@@ -378,6 +482,9 @@
         return;
       }
       if (audioNone) audioNone.hidden = true;
+      if (audioSelect && data.audioTracks.length === 1) {
+        audioSelect.value = String(data.audioTracks[0].index);
+      }
 
       var multi = data.audioTracks && data.audioTracks.length > 1;
       var anyPrepare = data.audioTracks && data.audioTracks.some(trackNeedsPrepare);

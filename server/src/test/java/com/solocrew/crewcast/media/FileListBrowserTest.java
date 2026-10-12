@@ -53,6 +53,9 @@ class FileListBrowserTest extends CrewcastSpringTestBase {
 
     @DynamicPropertySource
     static void fixtures(DynamicPropertyRegistry registry) throws Exception {
+        if (!FfmpegTestSupport.ffmpegAndFfprobeAvailable()) {
+            return;
+        }
         if (h264Fixture == null) {
             h264Fixture = MediaTestFixtures.h264();
         }
@@ -109,9 +112,11 @@ class FileListBrowserTest extends CrewcastSpringTestBase {
 
             page.locator(".folder-card").first().click();
             page.waitForSelector(".file-card:not(.folder-card)");
+            page.waitForSelector("#btn-download-all:not([hidden])");
+            assertTrue(page.locator("#btn-download-all").isVisible());
             page.locator(".file-card:not(.folder-card)").filter(new Locator.FilterOptions().setHasText("Sample.mp4")).click();
             page.locator("#modal").waitFor(new Locator.WaitForOptions().setState(WaitForSelectorState.VISIBLE));
-            page.locator("#btn-view").click();
+            page.locator("#modal").getByRole(AriaRole.BUTTON, new Locator.GetByRoleOptions().setName("Watch")).click();
             page.waitForURL("**/watch/" + videoId + "**");
             assertTrue(page.url().contains("/watch/" + videoId));
             assertTrue(page.url().contains("t="));
@@ -131,6 +136,8 @@ class FileListBrowserTest extends CrewcastSpringTestBase {
             page.locator("#modal").waitFor(new Locator.WaitForOptions().setState(WaitForSelectorState.VISIBLE));
             assertEquals(0, page.locator("#modal").getByRole(AriaRole.BUTTON,
                     new Locator.GetByRoleOptions().setName("View")).count());
+            assertEquals(0, page.locator("#modal").getByRole(AriaRole.BUTTON,
+                    new Locator.GetByRoleOptions().setName("Watch")).count());
 
             page.keyboard().press("Escape");
             page.locator("#modal").waitFor(new Locator.WaitForOptions().setState(WaitForSelectorState.HIDDEN));
@@ -139,6 +146,8 @@ class FileListBrowserTest extends CrewcastSpringTestBase {
             page.locator("#modal").waitFor(new Locator.WaitForOptions().setState(WaitForSelectorState.VISIBLE));
             assertEquals(0, page.locator("#modal").getByRole(AriaRole.BUTTON,
                     new Locator.GetByRoleOptions().setName("View")).count());
+            assertEquals(0, page.locator("#modal").getByRole(AriaRole.BUTTON,
+                    new Locator.GetByRoleOptions().setName("Watch")).count());
             page.locator("#modal-close").click();
             page.locator("#modal").waitFor(new Locator.WaitForOptions().setState(WaitForSelectorState.HIDDEN));
 
@@ -184,7 +193,7 @@ class FileListBrowserTest extends CrewcastSpringTestBase {
 
             page.locator(".file-card:not(.folder-card)").filter(new Locator.FilterOptions().setHasText("nested.mp4")).click();
             page.locator("#modal").waitFor(new Locator.WaitForOptions().setState(WaitForSelectorState.VISIBLE));
-            page.locator("#btn-view").click();
+            page.locator("#modal").getByRole(AriaRole.BUTTON, new Locator.GetByRoleOptions().setName("Watch")).click();
             page.waitForURL("**/watch/**");
             assertTrue(page.url().contains("t="));
             assertTrue(page.url().contains("folder="));

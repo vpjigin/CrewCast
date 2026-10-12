@@ -54,10 +54,11 @@ Paid code signing is planned if the project is used widely; the source and the r
 ## Features
 
 - **Public link** — HTTPS via a Cloudflare Quick Tunnel (automatic in the desktop app), plus a **Wi‑Fi link**, **QR code**, and copy buttons
-- **Folder and file sharing** — add libraries or individual videos; rescans on each request (no restart when files change on disk)
+- **Folder and file sharing** — add libraries or individual videos; rescans on each request (no restart when files change on disk); viewers can **Download all** on the web page as a zip of the current folder
 - **Viewer list** — see who is watching (in memory only, not saved to disk)
 - **Stay awake** — optional keep-awake while sharing is on (desktop)
 - **Audio fix** — remux/transcode for browser playback (MKV, E‑AC3, AC3, DTS, etc.) with a per-video **language / track picker**
+- **Compatibility mode** — optional H.264 + AAC conversion for TVs, projectors, and other browsers that cannot decode 10‑bit HEVC or exotic codecs (see [TVs and projectors](#tvs-and-projectors))
 - **Subtitles** — embedded and sidecar text tracks as WebVTT in the player
 - **Chapter thumbnails** — scrubbing grid (default 20 tiles) to jump through long videos
 - **Access key** — a private `?t=` token per sharing session; **New link** rotates it
@@ -146,6 +147,26 @@ java -jar server/target/crewcast-server-0.0.1-SNAPSHOT-exec.jar \
 Headless mode prints **LAN** and **Public** URLs when ready. Press **Ctrl+C** to stop (tunnel and server shut down cleanly).
 
 ---
+
+## TVs and projectors
+
+Many **built-in TV and projector browsers** play **AAC audio** from MKV/MP4 but show a **black or blocky picture** when the video is **10‑bit HEVC (x265)**, high H.264 profiles, or other codecs the chip cannot decode.
+
+**Compatibility mode** (toggle in the web player, or enabled automatically on TV-like browsers when the file looks risky) streams a cached **MP4** with **8‑bit H.264 (yuv420p, High profile)** and **AAC**, scaled to at most **1080p** or **720p** (Settings → **Maximum height**). **Download** always serves the **original file**.
+
+In the **desktop app → Settings → Playback** you can **pre-make TV versions** before anyone watches:
+
+| Setting | Meaning |
+|---------|---------|
+| **TV / projector compatible versions** | **Off** · **Only files that need it** (HEVC, 10‑bit, etc.) · **All videos** |
+| **Maximum height** | 1080p or 720p for the converted copy |
+| **Allow viewers to start conversions** | When off, viewers only get versions you prepared on the host |
+
+The share list shows a small **status icon** per video (and per file inside shared folders): not needed · queued · converting · ready · cannot convert. Use the **TV** menu on a row to **Prepare TV version** or **Cancel**. Folder rows include a summary such as “TV version: 2 ready, 1 converting 43%”.
+
+- **Hardware encoder required** — the bundled ffmpeg is an LGPL build **without libx264**. Crewcast picks a **hardware H.264 encoder** on your OS (e.g. VideoToolbox on Mac, NVENC/QSV/AMF on Windows, VAAPI/NVENC on Linux). If none works, the desktop app and web player show a clear error; use **VLC** on the TV if needed.
+- **First conversion takes time** — one cached copy per file (default audio track). Other audio tracks are still converted on demand. Cache lives under `~/.crewcast/cache/` (same size limit as audio conversions).
+- **Subtitles, chapters, seeking, and audio track selection** work in compatibility mode the same as direct play.
 
 ## Audio fix and ffmpeg
 

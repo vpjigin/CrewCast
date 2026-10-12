@@ -19,6 +19,9 @@ import com.solocrew.crewcast.desktop.ui.UrlField;
 import com.solocrew.crewcast.desktop.ui.ViewportWidthPanel;
 import com.solocrew.crewcast.net.DownloadFailureDetails;
 import com.solocrew.crewcast.facade.ShareListItem;
+import com.solocrew.crewcast.facade.ShareVideoCompatRow;
+import com.solocrew.crewcast.media.CompatUiState;
+import com.solocrew.crewcast.share.ShareRegistry;
 import com.solocrew.crewcast.facade.SharingLinks;
 import com.solocrew.crewcast.facade.SharingService;
 import com.solocrew.crewcast.media.FfmpegAudioSupport;
@@ -32,6 +35,8 @@ import net.miginfocom.swing.MigLayout;
 import org.springframework.context.ConfigurableApplicationContext;
 
 import javax.swing.BorderFactory;
+import javax.swing.JMenuItem;
+import javax.swing.JPopupMenu;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
@@ -114,6 +119,8 @@ public class MainFrame extends JFrame implements SharingUiListener {
     private final ToggleSwitch chapterThumbnailsToggle = new ToggleSwitch();
     private final ToggleSwitch fixAudioToggle = new ToggleSwitch();
     private final JLabel fixAudioMutedHint = new JLabel();
+    private final JLabel compatEncoderHint = new JLabel();
+    private boolean compatEncoderWarningShown;
     private final JPanel playbackSection = new JPanel();
     private boolean startSharingFfmpegPromptOfferedThisRun;
     private boolean ffmpegConsentDialogShowing;
@@ -456,6 +463,10 @@ public class MainFrame extends JFrame implements SharingUiListener {
         fixAudioMutedHint.setForeground(CrewcastTheme.MUTED);
         fixAudioMutedHint.setVisible(false);
         playbackSection.add(fixAudioMutedHint, "gapleft 4, gaptop 2, wrap");
+        compatEncoderHint.setFont(Fonts.ui(500, 12f));
+        compatEncoderHint.setForeground(CrewcastTheme.DANGER_TEXT);
+        compatEncoderHint.setVisible(false);
+        playbackSection.add(compatEncoderHint, "gapleft 4, gaptop 2, wrap");
         chapterThumbnailsToggle.addActionListener(e -> {
             if (sharingService != null) {
                 AppSettings settings = sharingService.getSettings();
@@ -887,6 +898,7 @@ public class MainFrame extends JFrame implements SharingUiListener {
         fixAudioToggle.setEnabled(true);
         setFixAudioToggleSelected(ffmpeg && sharingService.getSettings().isFixAudioForBrowsers());
         updateFixAudioMutedHint();
+        updateCompatEncoderHint();
     }
 
     private void setFixAudioToggleSelected(boolean selected) {
@@ -937,9 +949,26 @@ public class MainFrame extends JFrame implements SharingUiListener {
     }
 
     private JPanel buildShareRow(ShareListItem item) {
+        JPanel block = new JPanel(new MigLayout("ins 0, gap 4, fillx", "[grow,fill]", "[]"));
+        block.setOpaque(false);
+        block.add(buildShareRowMain(item), "growx, wrap");
+        if (item.entry().getKind() == ShareEntry.Kind.FOLDER
+                && item.folderVideos() != null
+                && !item.folderVideos().isEmpty()) {
+            JPanel nested = new JPanel(new MigLayout("ins 0, gap 4, fillx", "[grow,fill]", "[]"));
+            nested.setOpaque(false);
+            for (ShareVideoCompatRow v : item.folderVideos()) {
+                nested.add(buildFolderVideoCompatRow(v), "growx, wrap");
+            }
+            block.add(nested, "gapleft 46, growx");
+        }
+        return block;
+    }
+
+    private JPanel buildShareRowMain(ShareListItem item) {
         ShareEntry entry = item.entry();
         RoundedPanel row = new RoundedPanel();
-        row.setLayout(new MigLayout("ins 10 10 10 12, gap 10, fillx", "[36!][grow,fill][28!, shrink 0]", "[]"));
+        row.setLayout(new MigLayout("ins 10 10 10 12, gap 10, fillx", "[36!][grow,fill][22!, shrink 0][28!, shrink 0][28!, shrink 0]", "[]"));
         row.setFill(CrewcastTheme.CARD);
         row.setBorderColor(CrewcastTheme.BORDER);
         row.setArc(CrewcastTheme.RADIUS_ROW);
@@ -965,6 +994,9 @@ public class MainFrame extends JFrame implements SharingUiListener {
         if (item.audioMeta() != null && !item.audioMeta().isBlank()) {
             metaText = metaText + " · " + item.audioMeta();
         }
+        if (item.compatSummary() != null && !item.compatSummary().isBlank()) {
+            metaText = metaText + " · " + item.compatSummary();
+        }
         meta.setFullText(metaText);
         meta.setFont(Fonts.ui(500, 12.5f));
         meta.setForeground(CrewcastTheme.MUTED);
@@ -984,6 +1016,21 @@ public class MainFrame extends JFrame implements SharingUiListener {
         }
         text.add(meta, "growx, wmin 0");
 
+        boolean videoFile = entry.getKind() == ShareEntry.Kind.FILE
+                && ShareRegistry.isVideoFileName(Path.of(entry.getPath()).getFileName().toString());
+        JLabel compatIcon = compatStatusIcon(
+                videoFile ? item.fileCompatState() : CompatUiState.NOT_NEEDED,
+                videoFile ? item.fileCompatTooltip() : item.compatSummary());
+        if (!videoFile && entry.getKind() == ShareEntry.Kind.FOLDER) {
+            compatIcon = compatStatusIcon(folderAggregateState(item), item.compatSummary());
+        }
+
+        StyledButton tvMenu = new StyledButton("TV");
+        tvMenu.setVariant(StyledButton.Variant.GHOST);
+        tvMenu.packToContent();
+        tvMenu.setToolTipText("Prepare or cancel TV-safe H.264 version");
+        tvMenu.addActionListener(e -> showCompatPopup(tvMenu, item, null));
+
         ShareRemoveButton remove = new ShareRemoveButton();
         remove.addActionListener(e -> {
             sharingService.removeShare(item.index());
@@ -992,8 +1039,151 @@ public class MainFrame extends JFrame implements SharingUiListener {
 
         row.add(iconTile, "aligny center");
         row.add(text, "growx, wmin 0");
+        row.add(compatIcon, "aligny center, shrink 0");
+        row.add(tvMenu, "aligny center, shrink 0");
         row.add(remove, "aligny center, shrink 0");
         return row;
+    }
+
+    private JPanel buildFolderVideoCompatRow(ShareVideoCompatRow v) {
+        RoundedPanel row = new RoundedPanel();
+        row.setLayout(new MigLayout("ins 6 10 6 12, gap 8, fillx", "[grow,fill][22!, shrink 0][28!, shrink 0]", "[]"));
+        row.setFill(CrewcastTheme.CARD);
+        row.setBorderColor(CrewcastTheme.BORDER);
+        row.setArc(CrewcastTheme.RADIUS_ROW);
+        ElideLabel name = new ElideLabel();
+        name.setFullText(v.displayName());
+        name.setFont(Fonts.ui(500, 12.5f));
+        name.setForeground(CrewcastTheme.TEXT);
+        JLabel icon = compatStatusIcon(v.state(), v.tooltip());
+        StyledButton tvMenu = new StyledButton("TV");
+        tvMenu.setVariant(StyledButton.Variant.GHOST);
+        tvMenu.packToContent();
+        tvMenu.addActionListener(e -> showCompatPopup(tvMenu, null, v));
+        row.add(name, "growx, wmin 0");
+        row.add(icon, "aligny center");
+        row.add(tvMenu, "aligny center");
+        return row;
+    }
+
+    private CompatUiState folderAggregateState(ShareListItem item) {
+        if (item.folderVideos() == null || item.folderVideos().isEmpty()) {
+            return CompatUiState.NOT_NEEDED;
+        }
+        for (ShareVideoCompatRow v : item.folderVideos()) {
+            if (v.state() == CompatUiState.CONVERTING || v.state() == CompatUiState.QUEUED) {
+                return v.state();
+            }
+            if (v.state() == CompatUiState.FAILED || v.state() == CompatUiState.UNAVAILABLE) {
+                return v.state();
+            }
+            if (v.state() == CompatUiState.NEEDED) {
+                return CompatUiState.NEEDED;
+            }
+        }
+        return CompatUiState.READY;
+    }
+
+    private JLabel compatStatusIcon(CompatUiState state, String tooltip) {
+        Color c = CrewcastTheme.MUTED;
+        String icon = "video";
+        switch (state) {
+            case READY -> {
+                c = CrewcastTheme.SUCCESS;
+                icon = "play";
+            }
+            case CONVERTING, QUEUED -> {
+                c = new Color(0xeab308);
+                icon = "refresh";
+            }
+            case FAILED, UNAVAILABLE -> {
+                c = CrewcastTheme.DANGER_TEXT;
+                icon = "warning";
+            }
+            case NEEDED -> c = CrewcastTheme.LINK;
+            case NOT_NEEDED -> c = CrewcastTheme.META;
+            default -> {
+            }
+        }
+        JLabel lab = new JLabel(Icons.of(icon, 16, c));
+        lab.setToolTipText(tooltip != null && !tooltip.isBlank() ? tooltip : state.name());
+        return lab;
+    }
+
+    private void showCompatPopup(Component invoker, ShareListItem shareItem, ShareVideoCompatRow videoRow) {
+        JPopupMenu menu = new JPopupMenu();
+        if (shareItem != null && shareItem.entry().getKind() == ShareEntry.Kind.FOLDER && videoRow == null) {
+            JMenuItem prepNeed = new JMenuItem("Prepare all videos that need it");
+            prepNeed.addActionListener(e -> runCompatAction(() -> sharingService.prepareCompatForShareEntry(shareItem.entry())));
+            menu.add(prepNeed);
+            JMenuItem prepAll = new JMenuItem("Prepare all videos");
+            prepAll.addActionListener(e -> runCompatAction(() -> sharingService.prepareAllCompatForFolder(shareItem.entry())));
+            menu.add(prepAll);
+        } else {
+            JMenuItem prep = new JMenuItem("Prepare TV version");
+            prep.addActionListener(e -> {
+                if (videoRow != null) {
+                    runCompatAction(() -> sharingService.prepareCompatForShareEntry(
+                            new ShareEntry(videoRow.path().toString(), ShareEntry.Kind.FILE)));
+                } else if (shareItem != null) {
+                    runCompatAction(() -> sharingService.prepareCompatForShareEntry(shareItem.entry()));
+                }
+            });
+            menu.add(prep);
+        }
+        boolean canCancel = videoRow != null
+                ? videoRow.canCancel()
+                : shareItem != null && (shareItem.fileCompatCanCancel()
+                || (shareItem.folderVideos() != null && shareItem.folderVideos().stream().anyMatch(ShareVideoCompatRow::canCancel)));
+        if (canCancel) {
+            JMenuItem cancel = new JMenuItem("Cancel conversion");
+            cancel.addActionListener(e -> {
+                if (videoRow != null) {
+                    runCompatAction(() -> sharingService.cancelCompatForPath(videoRow.path()));
+                } else if (shareItem != null && shareItem.entry().getKind() == ShareEntry.Kind.FILE) {
+                    runCompatAction(() -> sharingService.cancelCompatForPath(Path.of(shareItem.entry().getPath())));
+                }
+            });
+            menu.add(cancel);
+        }
+        menu.show(invoker, 0, invoker.getHeight());
+    }
+
+    private void runCompatAction(CompatAction action) {
+        if (sharingService == null) {
+            return;
+        }
+        try {
+            action.run();
+            reloadShareList();
+        } catch (Exception ex) {
+            javax.swing.JOptionPane.showMessageDialog(this, ex.getMessage(), "TV version", javax.swing.JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    @FunctionalInterface
+    private interface CompatAction {
+        void run() throws Exception;
+    }
+
+    private void updateCompatEncoderHint() {
+        if (sharingService == null) {
+            compatEncoderHint.setVisible(false);
+            return;
+        }
+        AppSettings s = sharingService.getSettings();
+        boolean wantsCompat = s.getPrepareCompatInAdvance() != com.solocrew.crewcast.settings.PrepareCompatMode.OFF;
+        boolean ok = sharingService.isCompatEncoderAvailable();
+        if (wantsCompat && sharingService.isFfmpegAvailable() && !ok) {
+            compatEncoderHint.setText("<html>No hardware H.264 encoder found for TV versions. "
+                    + "See README → TVs and projectors, or play with VLC.</html>");
+            compatEncoderHint.setVisible(true);
+            if (!compatEncoderWarningShown) {
+                compatEncoderWarningShown = true;
+            }
+        } else {
+            compatEncoderHint.setVisible(false);
+        }
     }
 
     private void updateShareHeader() {
@@ -1414,6 +1604,7 @@ public class MainFrame extends JFrame implements SharingUiListener {
             settings.setFixAudioForBrowsers(false);
             sharingService.saveSettings(settings);
             updateFixAudioMutedHint();
+        updateCompatEncoderHint();
             return;
         }
         if (sharingService.isFfmpegAvailable()) {
@@ -1421,6 +1612,7 @@ public class MainFrame extends JFrame implements SharingUiListener {
             settings.setFixAudioForBrowsers(true);
             sharingService.saveSettings(settings);
             updateFixAudioMutedHint();
+        updateCompatEncoderHint();
             return;
         }
         setFixAudioToggleSelected(false);
@@ -1506,6 +1698,7 @@ public class MainFrame extends JFrame implements SharingUiListener {
             }
         }
         updateFixAudioMutedHint();
+        updateCompatEncoderHint();
     }
 
     @Override
@@ -1560,6 +1753,7 @@ public class MainFrame extends JFrame implements SharingUiListener {
                 DownloadErrorDialog.show(this, "Could not download ffmpeg", detail, failure);
             }
             updateFixAudioMutedHint();
+        updateCompatEncoderHint();
         });
     }
 
@@ -1596,6 +1790,11 @@ public class MainFrame extends JFrame implements SharingUiListener {
     @Override
     public void onViewersChanged(List<ViewerView> viewers) {
         SwingUtilities.invokeLater(() -> refreshViewersList(viewers));
+    }
+
+    @Override
+    public void onCompatPrepChanged() {
+        SwingUtilities.invokeLater(this::reloadShareList);
     }
 
     /** Placeholder for mockup title-bar balance (80px). */

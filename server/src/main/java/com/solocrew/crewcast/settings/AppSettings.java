@@ -33,6 +33,10 @@ public class AppSettings {
     /** Optional path to ffmpeg binary (ffprobe must sit beside it). */
     private String ffmpegBinaryPath;
     private FfmpegDownloadConsent ffmpegDownloadConsent = FfmpegDownloadConsent.UNSET;
+    /** Max height for TV compatibility transcodes (720 or 1080). */
+    private int compatMaxHeight = 1080;
+    private PrepareCompatMode prepareCompatInAdvance = PrepareCompatMode.OFF;
+    private boolean allowViewerCompatPrepare = true;
 
     public List<ShareEntry> getShares() {
         return shares;
@@ -128,6 +132,30 @@ public class AppSettings {
 
     public void setAudioCacheMaxGb(int audioCacheMaxGb) {
         this.audioCacheMaxGb = Math.max(1, audioCacheMaxGb);
+    }
+
+    public int getCompatMaxHeight() {
+        return compatMaxHeight >= 720 && compatMaxHeight < 1080 ? 720 : 1080;
+    }
+
+    public void setCompatMaxHeight(int compatMaxHeight) {
+        this.compatMaxHeight = compatMaxHeight <= 720 ? 720 : 1080;
+    }
+
+    public PrepareCompatMode getPrepareCompatInAdvance() {
+        return prepareCompatInAdvance != null ? prepareCompatInAdvance : PrepareCompatMode.OFF;
+    }
+
+    public void setPrepareCompatInAdvance(PrepareCompatMode prepareCompatInAdvance) {
+        this.prepareCompatInAdvance = prepareCompatInAdvance != null ? prepareCompatInAdvance : PrepareCompatMode.OFF;
+    }
+
+    public boolean isAllowViewerCompatPrepare() {
+        return allowViewerCompatPrepare;
+    }
+
+    public void setAllowViewerCompatPrepare(boolean allowViewerCompatPrepare) {
+        this.allowViewerCompatPrepare = allowViewerCompatPrepare;
     }
 
     public PrepareAudioMode getPrepareAudioInAdvance() {

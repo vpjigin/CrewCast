@@ -47,6 +47,9 @@ class AudioFixIntegrationTest extends CrewcastSpringTestBase {
 
     @DynamicPropertySource
     static void fixtures(DynamicPropertyRegistry registry) throws Exception {
+        if (!FfmpegTestSupport.ffmpegAndFfprobeAvailable()) {
+            return;
+        }
         if (fixture == null) {
             fixture = MediaTestFixtures.coverArt();
         }

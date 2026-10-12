@@ -25,8 +25,21 @@ public final class FfmpegTestSupport {
         return ffmpeg.isPresent() && ffprobe.isPresent();
     }
 
+    /** Resolved ffmpeg binary for tests (same search order as {@link FfmpegManager}). */
+    public static Optional<Path> ffmpegPath() {
+        return locate("ffmpeg").filter(FfmpegManager::commandWorks);
+    }
+
     public static boolean ffmpegDownloadE2eEnabled() {
         return Boolean.getBoolean("crewcast.ffmpeg.e2e");
+    }
+
+    /**
+     * Guard for {@code @DynamicPropertySource} and static fixture builders — must not invoke ffmpeg
+     * when ffprobe/ffmpeg are unavailable (e.g. CI with {@code -DexcludedGroups=e2e}).
+     */
+    public static boolean shouldBuildFfmpegFixtures() {
+        return ffmpegAndFfprobeAvailable();
     }
 
     private static Optional<Path> locate(String binary) {

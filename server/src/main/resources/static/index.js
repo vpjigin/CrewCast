@@ -25,6 +25,7 @@
   var btnBack = document.getElementById('btn-back');
   var breadcrumbEl = document.getElementById('breadcrumb');
   var btnShowMore = document.getElementById('btn-show-more');
+  var btnDownloadAll = document.getElementById('btn-download-all');
   var modal = document.getElementById('modal');
   var modalTitle = document.getElementById('modal-title');
   var modalSub = document.getElementById('modal-sub');
@@ -33,6 +34,7 @@
   var modalNoPreview = document.getElementById('modal-no-preview');
   var noPreviewExt = document.getElementById('no-preview-ext');
   var btnView = document.getElementById('btn-view');
+  var btnViewLabel = document.getElementById('btn-view-label');
   var btnDownload = document.getElementById('btn-download');
   var btnClose = document.getElementById('modal-close');
   var btnBackdrop = document.getElementById('modal-backdrop');
@@ -58,6 +60,34 @@
     var t = pageToken();
     if (!t) return path;
     return path + (path.indexOf('?') >= 0 ? '&' : '?') + 't=' + encodeURIComponent(t);
+  }
+
+  function downloadAllUrl() {
+    var q = [];
+    var t = pageToken();
+    if (t) q.push('t=' + encodeURIComponent(t));
+    var folder = currentFolderId();
+    if (folder) q.push('folder=' + encodeURIComponent(folder));
+    return '/api/download-all' + (q.length ? '?' + q.join('&') : '');
+  }
+
+  function updateDownloadAllButton() {
+    if (!btnDownloadAll) return;
+    var hasContent = files.length > 0 || folders.length > 0;
+    btnDownloadAll.hidden = !hasContent;
+    if (!hasContent) return;
+    btnDownloadAll.href = downloadAllUrl();
+    var parts = [];
+    if (files.length > 0) {
+      var total = 0;
+      files.forEach(function (f) { total += f.sizeBytes || 0; });
+      parts.push(files.length + (files.length === 1 ? ' file' : ' files') + ' on this page · ' + formatSize(total));
+    }
+    if (folders.length > 0) {
+      parts.push(folders.length + (folders.length === 1 ? ' folder' : ' folders') + ' (full contents included in zip)');
+    }
+    btnDownloadAll.title = parts.join(' · ');
+    btnDownloadAll.setAttribute('aria-label', 'Download all as zip. ' + parts.join('. '));
   }
 
   function browseApiUrl(folderId) {
@@ -124,6 +154,24 @@
 
   function canView(f) {
     return f.viewable && (isVideo(f) || isImage(f));
+  }
+
+  function viewActionLabel(f) {
+    return isVideo(f) ? 'Watch' : 'View';
+  }
+
+  function viewActionDescription(f) {
+    if (isVideo(f)) return 'Watch ' + f.name;
+    if (isImage(f)) return 'View ' + f.name;
+    return 'View';
+  }
+
+  function updateViewActionButton(f) {
+    if (!btnViewLabel) return;
+    var label = viewActionLabel(f);
+    btnViewLabel.textContent = label;
+    btnView.setAttribute('aria-label', viewActionDescription(f));
+    btnView.setAttribute('title', viewActionDescription(f));
   }
 
   function watchUrl(id) {
@@ -335,6 +383,9 @@
     modalPreview.hidden = !showView;
     modalNoPreview.hidden = showView;
     btnView.hidden = !showView;
+    if (showView) {
+      updateViewActionButton(f);
+    }
 
     if (showView) {
       previewFrame.innerHTML = '';
@@ -474,6 +525,7 @@
         }
         renderBreadcrumb(data.breadcrumb || []);
         renderGrid();
+        updateDownloadAllButton();
       })
       .catch(function (err) {
         if (err && err.message === 'not found' && currentFolderId()) {
@@ -490,6 +542,7 @@
             ? 'Folder not found'
             : 'Could not load shared files';
         statusMessage.className = err && err.message === 'not found' ? 'empty-state' : 'error-state';
+        updateDownloadAllButton();
       });
   }
 

@@ -58,6 +58,9 @@ class OnDemandAudioBrowserTest extends CrewcastSpringTestBase {
     @DynamicPropertySource
     static void props(DynamicPropertyRegistry registry) throws Exception {
         System.setProperty("crewcast.audio.idle-cancel-ms", "3000");
+        if (!FfmpegTestSupport.ffmpegAndFfprobeAvailable()) {
+            return;
+        }
         if (fixture == null) {
             fixture = MediaTestFixtures.coverArt();
         }

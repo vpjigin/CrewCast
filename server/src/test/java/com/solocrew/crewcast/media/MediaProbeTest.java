@@ -34,6 +34,21 @@ class MediaProbeTest extends CrewcastSpringTestBase {
     }
 
     @Test
+    void parseJsonTreatsMissingCodecTypeAsAudioWhenCodecNameMatches() throws Exception {
+        String json = """
+                {
+                  "streams": [
+                    {"index":0,"codec_type":"video","codec_name":"h264","width":640,"height":360},
+                    {"index":1,"codec_name":"aac","channels":2,"tags":{"language":"eng"}}
+                  ]
+                }
+                """;
+        ProbedMedia media = MediaProbe.parse(json);
+        assertEquals(1, media.audioTracks().size());
+        assertEquals("aac", media.audioTracks().getFirst().codecName());
+    }
+
+    @Test
     void parseJsonSkipsAttachedPicStream() throws Exception {
         String json = """
                 {
