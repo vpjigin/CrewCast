@@ -12,11 +12,16 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -27,10 +32,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest(properties = "server.port=0")
 @AutoConfigureMockMvc
+@Import(CompatViewerPermissionApiTest.StubAudioFixConfig.class)
 class CompatViewerPermissionApiTest extends CrewcastSpringTestBase {
 
-    private static Path fixture;
-    private static String videoId;
+    static final ProbedMedia SAMPLE_MEDIA = new ProbedMedia(
+            0,
+            "h264",
+            false,
+            List.of(new AudioStreamInfo(1, 0, "aac", "eng", "", 2, "stereo")),
+            List.of(),
+            new VideoFormat(320, 240, 24, "yuv420p", "High", 8, "", ""));
 
     @Autowired
     MockMvc mockMvc;
@@ -41,13 +52,7 @@ class CompatViewerPermissionApiTest extends CrewcastSpringTestBase {
     @Autowired
     SettingsStore settingsStore;
 
-    @DynamicPropertySource
-    static void fixtures(DynamicPropertyRegistry registry) throws Exception {
-        if (fixture == null) {
-            fixture = MediaTestFixtures.h264();
-        }
-        videoId = ShareRegistry.idForPath(fixture);
-    }
+    private String videoId;
 
     @BeforeEach
     void setup() throws Exception {
@@ -58,7 +63,10 @@ class CompatViewerPermissionApiTest extends CrewcastSpringTestBase {
         s.setRequirePrivateKey(false);
         s.setAllowViewerCompatPrepare(false);
         settingsStore.update(s);
-        shareRegistry.addFile(fixture);
+
+        Path stub = Files.createTempFile("compat-perm-", ".mp4");
+        Files.write(stub, new byte[] {0x00});
+        shareRegistry.addFile(stub);
         videoId = shareRegistry.listVideos().getFirst().id();
     }
 
@@ -84,5 +92,40 @@ class CompatViewerPermissionApiTest extends CrewcastSpringTestBase {
         JsonNode json = new ObjectMapper().readTree(body);
         assertEquals("FAILED", json.get("status").asText());
         assertEquals(CompatFixService.VIEWER_PREPARE_BLOCKED_MESSAGE, json.get("message").asText());
+    }
+
+    @TestConfiguration
+    static class StubAudioFixConfig {
+
+        @Bean
+        @Primary
+        AudioFixService audioFixService(FfmpegManager ffmpegManager, SettingsStore settingsStore, ShareRegistry shareRegistry) {
+            return new AudioFixService(ffmpegManager, settingsStore, shareRegistry) {
+                @Override
+                public ProbedMedia probe(Path file) {
+                    return SAMPLE_MEDIA;
+                }
+
+                @Override
+                public int defaultAudioIndex(ProbedMedia media) {
+                    return 0;
+                }
+
+                @Override
+                public AudioFixStatus statusFor(Path source, int audioIndex, boolean recordPoll) {
+                    return new AudioFixStatus(AudioFixJobState.READY, 100, "Ready", "test");
+                }
+
+                @Override
+                public String prepareTimeHint(Path source) {
+                    return "a few minutes";
+                }
+
+                @Override
+                public boolean isTrackReady(Path source, int audioIndex) {
+                    return true;
+                }
+            };
+        }
     }
 }

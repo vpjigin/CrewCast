@@ -63,6 +63,9 @@ class CompatConversionE2eTest extends CrewcastSpringTestBase {
 
     @DynamicPropertySource
     static void fixtures(DynamicPropertyRegistry registry) throws Exception {
+        if (!FfmpegTestSupport.ffmpegAndFfprobeAvailable()) {
+            return;
+        }
         if (fixture == null) {
             fixture = buildTenBitHevcFixture();
         }

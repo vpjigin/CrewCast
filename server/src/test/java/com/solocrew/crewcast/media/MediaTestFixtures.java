@@ -13,6 +13,9 @@ final class MediaTestFixtures {
     }
 
     static Path coverArt() throws Exception {
+        if (!FfmpegTestSupport.shouldBuildFfmpegFixtures()) {
+            throw new IllegalStateException(FfmpegTestSupport.FFMPEG_NOT_ON_PATH);
+        }
         synchronized (MediaTestFixtures.class) {
             if (coverArt == null) {
                 coverArt = CoverArtFixture.create();
@@ -22,6 +25,9 @@ final class MediaTestFixtures {
     }
 
     static Path h264() throws Exception {
+        if (!FfmpegTestSupport.shouldBuildFfmpegFixtures()) {
+            throw new IllegalStateException(FfmpegTestSupport.FFMPEG_NOT_ON_PATH);
+        }
         synchronized (MediaTestFixtures.class) {
             if (h264 == null) {
                 h264 = H264Fixture.create();
@@ -31,6 +37,9 @@ final class MediaTestFixtures {
     }
 
     static Path silentH264() throws Exception {
+        if (!FfmpegTestSupport.shouldBuildFfmpegFixtures()) {
+            throw new IllegalStateException(FfmpegTestSupport.FFMPEG_NOT_ON_PATH);
+        }
         synchronized (MediaTestFixtures.class) {
             if (silentH264 == null) {
                 silentH264 = H264Fixture.createSilent();

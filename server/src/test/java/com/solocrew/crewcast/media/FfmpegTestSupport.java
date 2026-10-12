@@ -34,6 +34,14 @@ public final class FfmpegTestSupport {
         return Boolean.getBoolean("crewcast.ffmpeg.e2e");
     }
 
+    /**
+     * Guard for {@code @DynamicPropertySource} and static fixture builders — must not invoke ffmpeg
+     * when ffprobe/ffmpeg are unavailable (e.g. CI with {@code -DexcludedGroups=e2e}).
+     */
+    public static boolean shouldBuildFfmpegFixtures() {
+        return ffmpegAndFfprobeAvailable();
+    }
+
     private static Optional<Path> locate(String binary) {
         List<Path> candidates = new ArrayList<>();
         String propPath = System.getProperty("crewcast.ffmpeg.path");

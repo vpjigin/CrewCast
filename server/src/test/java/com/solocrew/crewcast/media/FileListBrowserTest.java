@@ -53,6 +53,9 @@ class FileListBrowserTest extends CrewcastSpringTestBase {
 
     @DynamicPropertySource
     static void fixtures(DynamicPropertyRegistry registry) throws Exception {
+        if (!FfmpegTestSupport.ffmpegAndFfprobeAvailable()) {
+            return;
+        }
         if (h264Fixture == null) {
             h264Fixture = MediaTestFixtures.h264();
         }

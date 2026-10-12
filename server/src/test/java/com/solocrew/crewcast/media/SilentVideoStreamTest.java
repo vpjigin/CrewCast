@@ -7,7 +7,6 @@ import com.solocrew.crewcast.share.ShareRegistry;
 import com.solocrew.crewcast.support.CrewcastSpringTestBase;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIf;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -28,9 +27,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest(properties = "server.port=0")
 @AutoConfigureMockMvc
-@EnabledIf(
-        value = "com.solocrew.crewcast.media.FfmpegTestSupport#ffmpegAndFfprobeAvailable",
-        disabledReason = FfmpegTestSupport.FFMPEG_NOT_ON_PATH)
+@E2eFfmpegRequired
 class SilentVideoStreamTest extends CrewcastSpringTestBase {
 
     private static Path silentFixture;
@@ -47,6 +44,9 @@ class SilentVideoStreamTest extends CrewcastSpringTestBase {
 
     @DynamicPropertySource
     static void fixtures(DynamicPropertyRegistry registry) throws Exception {
+        if (!FfmpegTestSupport.ffmpegAndFfprobeAvailable()) {
+            return;
+        }
         if (silentFixture == null) {
             silentFixture = MediaTestFixtures.silentH264();
         }
