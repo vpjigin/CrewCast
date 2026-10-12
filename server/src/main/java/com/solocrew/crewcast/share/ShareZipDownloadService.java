@@ -2,17 +2,14 @@ package com.solocrew.crewcast.share;
 
 import com.solocrew.crewcast.settings.SettingsStore;
 import com.solocrew.crewcast.settings.ShareEntry;
-import org.apache.commons.compress.archivers.zip.Zip64Mode;
-import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
-import org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.io.BufferedInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -25,18 +22,17 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
 
 @Service
 public class ShareZipDownloadService {
 
+    private static final Logger log = LoggerFactory.getLogger(ShareZipDownloadService.class);
+
     public static final String TOO_MANY_MESSAGE =
             "Too many download-all requests are in progress. Try again in a moment.";
     public static final String TOP_LEVEL_ARCHIVE = "Crewcast-shared.zip";
-
-    private static final int BUFFER_SIZE = 64 * 1024;
 
     private final SettingsStore settingsStore;
     private final ShareBrowseService shareBrowseService;
@@ -64,75 +60,70 @@ public class ShareZipDownloadService {
         return gate;
     }
 
-    public String archiveFilenameFor(String folderId) throws IOException {
-        return resolveScope(folderId).archiveName();
+    public record PreparedDownload(
+            String archiveName,
+            List<StreamingStoredZipWriter.PlannedEntry> entries,
+            long contentLength) {
     }
 
-    public void writeZip(String folderId, OutputStream output, BooleanSupplier clientConnected) throws IOException {
+    public PreparedDownload prepareDownload(String folderId) throws IOException {
+        DownloadScope scope = resolveScope(folderId);
+        List<StreamingStoredZipWriter.PlannedEntry> plans = planEntries(scope);
+        return new PreparedDownload(
+                scope.archiveName(),
+                List.copyOf(plans),
+                StreamingStoredZipWriter.totalArchiveSize(plans));
+    }
+
+    public String archiveFilenameFor(String folderId) throws IOException {
+        return prepareDownload(folderId).archiveName();
+    }
+
+    public long zipContentLength(String folderId) throws IOException {
+        return prepareDownload(folderId).contentLength();
+    }
+
+    public void writeZip(PreparedDownload prepared, OutputStream output, BooleanSupplier clientConnected)
+            throws IOException {
         if (!gate.tryEnter()) {
             throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, TOO_MANY_MESSAGE);
         }
         try {
-            DownloadScope scope = resolveScope(folderId);
-            try (ZipArchiveOutputStream zos = new ZipArchiveOutputStream(output)) {
-                zos.setUseZip64(Zip64Mode.AsNeeded);
-                zos.setLevel(0);
-                zos.setMethod(ZipArchiveEntry.DEFLATED);
-                zos.setEncoding("UTF-8");
-                Map<String, Integer> topLevelDedupe = new HashMap<>();
-                int[] entryCount = {0};
-                for (ShareRootScope rootScope : scope.roots()) {
-                    if (!clientConnected.getAsBoolean()) {
-                        return;
-                    }
-                    collectAndWrite(rootScope, zos, topLevelDedupe, entryCount, clientConnected);
-                }
-                zos.finish();
+            try {
+                StreamingStoredZipWriter.writeArchive(output, prepared.entries(), clientConnected);
+            } catch (IOException e) {
+                log.warn("Zip download aborted: {}", e.getMessage());
+                throw e;
             }
         } finally {
             gate.exit();
         }
     }
 
-    private void collectAndWrite(
+    List<StreamingStoredZipWriter.PlannedEntry> planEntries(DownloadScope scope) throws IOException {
+        List<StreamingStoredZipWriter.PlannedEntry> plans = new ArrayList<>();
+        Map<String, Integer> topLevelDedupe = new HashMap<>();
+        for (ShareRootScope rootScope : scope.roots()) {
+            collectPlanned(rootScope, plans, topLevelDedupe);
+        }
+        return plans;
+    }
+
+    private void collectPlanned(
             ShareRootScope rootScope,
-            ZipArchiveOutputStream zos,
-            Map<String, Integer> topLevelDedupe,
-            int[] entryCount,
-            BooleanSupplier clientConnected) throws IOException {
+            List<StreamingStoredZipWriter.PlannedEntry> plans,
+            Map<String, Integer> topLevelDedupe) throws IOException {
         Path downloadRoot = rootScope.downloadRoot();
         Path shareRoot = rootScope.shareRoot();
         String pathPrefix = rootScope.zipPathPrefix();
         if (Files.isRegularFile(downloadRoot, LinkOption.NOFOLLOW_LINKS)) {
-            if (!shareRegistry.isSharedPathAllowed(downloadRoot)) {
-                return;
-            }
-            if (!ShareExposeFilter.shouldExposeFromFolder(shareRoot, downloadRoot)) {
-                return;
-            }
-            if (!SharePathSecurity.isInsideShareRoot(shareRoot, downloadRoot)) {
-                return;
-            }
-            if (entryCount[0] >= maxEntries) {
-                throw new ResponseStatusException(
-                        HttpStatus.PAYLOAD_TOO_LARGE, "This folder is too large to download as one zip");
-            }
-            String rel = downloadRoot.getFileName().toString();
-            if (!pathPrefix.isEmpty()) {
-                rel = ShareZipEntryPaths.sanitizeRelativePath(pathPrefix + "/" + rel);
-            }
-            rel = ShareZipEntryPaths.dedupeTopLevel(rel, topLevelDedupe);
-            writeStoredEntry(zos, rel, downloadRoot);
-            entryCount[0]++;
+            addFilePlan(downloadRoot, shareRoot, pathPrefix, "", plans, topLevelDedupe);
             return;
         }
         Set<Path> visitedDirs = new HashSet<>();
         Files.walkFileTree(downloadRoot, Set.of(), maxDepth, new SimpleFileVisitor<>() {
             @Override
             public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
-                if (!clientConnected.getAsBoolean()) {
-                    return FileVisitResult.TERMINATE;
-                }
                 if (!SharePathSecurity.isInsideShareRoot(shareRoot, dir)) {
                     return FileVisitResult.SKIP_SUBTREE;
                 }
@@ -153,9 +144,6 @@ public class ShareZipDownloadService {
 
             @Override
             public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                if (!clientConnected.getAsBoolean()) {
-                    return FileVisitResult.TERMINATE;
-                }
                 if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) {
                     return FileVisitResult.CONTINUE;
                 }
@@ -168,37 +156,47 @@ public class ShareZipDownloadService {
                 if (!shareRegistry.isSharedPathAllowed(file)) {
                     return FileVisitResult.CONTINUE;
                 }
-                if (entryCount[0] >= maxEntries) {
+                if (plans.size() >= maxEntries) {
                     throw new ResponseStatusException(
                             HttpStatus.PAYLOAD_TOO_LARGE, "This folder is too large to download as one zip");
                 }
                 String rel = ShareZipEntryPaths.fromRelativePath(downloadRoot, file);
-                if (!pathPrefix.isEmpty()) {
-                    rel = ShareZipEntryPaths.sanitizeRelativePath(pathPrefix + "/" + rel);
-                }
-                rel = ShareZipEntryPaths.dedupeTopLevel(rel, topLevelDedupe);
-                writeStoredEntry(zos, rel, file);
-                entryCount[0]++;
+                addFilePlan(file, shareRoot, pathPrefix, rel, plans, topLevelDedupe);
                 return FileVisitResult.CONTINUE;
             }
         });
     }
 
-    private static void writeStoredEntry(ZipArchiveOutputStream zos, String entryName, Path file) throws IOException {
-        ZipArchiveEntry entry = new ZipArchiveEntry(entryName);
-        entry.setMethod(ZipArchiveEntry.DEFLATED);
-        entry.setSize(Files.size(file));
-        zos.putArchiveEntry(entry);
-        try (InputStream in = new BufferedInputStream(Files.newInputStream(file))) {
-            byte[] buf = new byte[BUFFER_SIZE];
-            int read;
-            while ((read = in.read(buf)) >= 0) {
-                if (read > 0) {
-                    zos.write(buf, 0, read);
-                }
-            }
+    private void addFilePlan(
+            Path file,
+            Path shareRoot,
+            String pathPrefix,
+            String relativePath,
+            List<StreamingStoredZipWriter.PlannedEntry> plans,
+            Map<String, Integer> topLevelDedupe) throws IOException {
+        if (!shareRegistry.isSharedPathAllowed(file)) {
+            return;
         }
-        zos.closeArchiveEntry();
+        if (!ShareExposeFilter.shouldExposeFromFolder(shareRoot, file)) {
+            return;
+        }
+        if (!SharePathSecurity.isInsideShareRoot(shareRoot, file)) {
+            return;
+        }
+        if (plans.size() >= maxEntries) {
+            throw new ResponseStatusException(
+                    HttpStatus.PAYLOAD_TOO_LARGE, "This folder is too large to download as one zip");
+        }
+        String rel = relativePath;
+        if (rel.isEmpty()) {
+            rel = file.getFileName().toString();
+        }
+        if (!pathPrefix.isEmpty()) {
+            rel = ShareZipEntryPaths.sanitizeRelativePath(pathPrefix + "/" + rel);
+        }
+        rel = ShareZipEntryPaths.dedupeTopLevel(rel, topLevelDedupe);
+        long size = Files.size(file);
+        plans.add(StreamingStoredZipWriter.PlannedEntry.of(rel, file, size));
     }
 
     private DownloadScope resolveScope(String folderId) throws IOException {

@@ -23,12 +23,14 @@ public class DownloadAllController {
     public void downloadAll(
             @RequestParam(name = "folder", required = false) String folder,
             HttpServletResponse response) throws IOException {
-        String archiveName = zipDownloadService.archiveFilenameFor(folder);
+        ShareZipDownloadService.PreparedDownload prepared = zipDownloadService.prepareDownload(folder);
         response.setStatus(HttpServletResponse.SC_OK);
         response.setContentType("application/zip");
         response.setHeader(HttpHeaders.CONTENT_DISPOSITION,
-                ContentDispositionHelper.attachmentFilename(archiveName).toString());
-        zipDownloadService.writeZip(folder, response.getOutputStream(), () -> !Thread.currentThread().isInterrupted());
+                ContentDispositionHelper.attachmentFilename(prepared.archiveName()).toString());
+        response.setHeader(HttpHeaders.ACCEPT_RANGES, "none");
+        response.setContentLengthLong(prepared.contentLength());
+        zipDownloadService.writeZip(prepared, response.getOutputStream(), () -> !Thread.currentThread().isInterrupted());
         response.flushBuffer();
     }
 }

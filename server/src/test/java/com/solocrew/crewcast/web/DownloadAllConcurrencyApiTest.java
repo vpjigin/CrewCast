@@ -55,7 +55,8 @@ class DownloadAllConcurrencyApiTest extends CrewcastSpringTestBase {
     void returns429WhenConcurrentLimitReached() throws Exception {
         assertTrue(zipDownloadService.concurrencyGateForTests().tryEnter());
         try {
-            mockMvc.perform(get("/api/download-all").param("t", accessSession.getToken()))
+            mockMvc.perform(get("/api/download-all").param("t", accessSession.getToken())
+                            .header("Cf-Connecting-Ip", "203.0.113.10"))
                     .andExpect(status().isTooManyRequests());
         } finally {
             zipDownloadService.concurrencyGateForTests().exit();

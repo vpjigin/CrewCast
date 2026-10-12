@@ -5,8 +5,6 @@ import com.solocrew.crewcast.access.SharingState;
 import com.solocrew.crewcast.settings.SettingsStore;
 import com.solocrew.crewcast.share.ShareRegistry;
 import com.solocrew.crewcast.support.CrewcastSpringTestBase;
-import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
-import org.apache.commons.compress.archivers.zip.ZipArchiveInputStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledOnOs;
@@ -77,9 +75,14 @@ class DownloadAllApiTest extends CrewcastSpringTestBase {
         MvcResult result = mockMvc.perform(get("/api/download-all").param("folder", innerId).param("t", token))
                 .andExpect(status().isOk())
                 .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, containsString("inner.zip")))
+                .andExpect(header().string(HttpHeaders.ACCEPT_RANGES, "none"))
                 .andReturn();
 
-        Map<String, String> entries = readZipTextEntries(result.getResponse().getContentAsByteArray());
+        byte[] body = result.getResponse().getContentAsByteArray();
+        assertEquals(
+                Long.parseLong(result.getResponse().getHeader(HttpHeaders.CONTENT_LENGTH)),
+                body.length);
+        Map<String, String> entries = readZipTextEntries(body);
         assertEquals("deep-content", entries.get("deep.txt"));
         assertNull(entries.get(".hidden"));
         assertNull(entries.get("notes.pdf"));
@@ -92,7 +95,11 @@ class DownloadAllApiTest extends CrewcastSpringTestBase {
                 .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, containsString("Crewcast-shared.zip")))
                 .andReturn();
 
-        Map<String, String> entries = readZipTextEntries(result.getResponse().getContentAsByteArray());
+        byte[] body = result.getResponse().getContentAsByteArray();
+        assertEquals(
+                Long.parseLong(result.getResponse().getHeader(HttpHeaders.CONTENT_LENGTH)),
+                body.length);
+        Map<String, String> entries = readZipTextEntries(body);
         String folderName = shareDir.getFileName().toString();
         assertEquals("%PDF", entries.get(folderName + "/notes.pdf"));
         assertEquals("deep-content", entries.get(folderName + "/inner/deep.txt"));
@@ -125,15 +132,21 @@ class DownloadAllApiTest extends CrewcastSpringTestBase {
 
     private static Map<String, String> readZipTextEntries(byte[] zipBytes) throws Exception {
         Map<String, String> out = new HashMap<>();
-        try (ZipArchiveInputStream zis = new ZipArchiveInputStream(new java.io.ByteArrayInputStream(zipBytes))) {
-            ZipArchiveEntry entry;
-            while ((entry = zis.getNextZipEntry()) != null) {
-                if (entry.isDirectory()) {
-                    continue;
+        java.nio.file.Path zipPath = java.nio.file.Files.createTempFile("crewcast-dlall-", ".zip");
+        try {
+            java.nio.file.Files.write(zipPath, zipBytes);
+            try (java.util.zip.ZipFile zf = new java.util.zip.ZipFile(zipPath.toFile())) {
+                var entries = zf.entries();
+                while (entries.hasMoreElements()) {
+                    java.util.zip.ZipEntry entry = entries.nextElement();
+                    if (entry.isDirectory()) {
+                        continue;
+                    }
+                    out.put(entry.getName(), new String(zf.getInputStream(entry).readAllBytes(), StandardCharsets.UTF_8));
                 }
-                byte[] buf = zis.readAllBytes();
-                out.put(entry.getName(), new String(buf, StandardCharsets.UTF_8));
             }
+        } finally {
+            java.nio.file.Files.deleteIfExists(zipPath);
         }
         return out;
     }
