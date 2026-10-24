@@ -142,7 +142,7 @@ public class AudioFixService {
     }
 
     public void onSharingStopped() {
-        cancelAllJobs(true);
+        cancelViewerJobs(true);
     }
 
     public void onShareRemoved(Path shareRoot) {
@@ -402,6 +402,40 @@ public class AudioFixService {
             return 0;
         }
         return AudioTrackSelector.selectAudioIndex(media, null, pref);
+    }
+
+    /**
+     * Canonical relative audio index for playback, compat jobs, and cache keys.
+     * {@code audioQuery == null} means the app default track ({@link #defaultAudioIndex}).
+     * Invalid explicit indices fall back to the default (internal callers only).
+     */
+    public int resolveAudioIndex(ProbedMedia media, Integer audioQuery) {
+        if (audioQuery != null && media.audioByRelativeIndex(audioQuery).isPresent()) {
+            return audioQuery;
+        }
+        if (audioQuery != null && media.audioTracks().isEmpty() && audioQuery == 0) {
+            return 0;
+        }
+        return defaultAudioIndex(media);
+    }
+
+    /**
+     * Like {@link #resolveAudioIndex} but rejects unknown explicit track indices (HTTP API).
+     */
+    public int resolveAudioIndexStrict(ProbedMedia media, Integer audioQuery) {
+        if (audioQuery == null) {
+            return defaultAudioIndex(media);
+        }
+        if (media.audioTracks().isEmpty()) {
+            if (audioQuery == 0) {
+                return 0;
+            }
+            throw new InvalidAudioTrackException(audioQuery);
+        }
+        if (media.audioByRelativeIndex(audioQuery).isEmpty()) {
+            throw new InvalidAudioTrackException(audioQuery);
+        }
+        return audioQuery;
     }
 
     public boolean needsTranscode(Path source, ProbedMedia media, int audioIndex) {
@@ -759,6 +793,32 @@ public class AudioFixService {
             }
         }
         jobs.clear();
+    }
+
+    /** Stops viewer-started jobs when sharing ends; host prep continues. */
+    public void cancelViewerJobs(boolean wait) {
+        List<MutableJob> toCancel = jobs.values().stream()
+                .filter(j -> j.viewerInitiated || j.startedBy == ConversionStartedBy.VIEWER)
+                .filter(j -> j.state == AudioFixJobState.QUEUED || j.state == AudioFixJobState.RUNNING)
+                .toList();
+        if (toCancel.isEmpty()) {
+            return;
+        }
+        Process p = runningProcess;
+        boolean killRunning = toCancel.stream().anyMatch(j -> j.state == AudioFixJobState.RUNNING);
+        if (killRunning && p != null) {
+            p.destroyForcibly();
+        }
+        for (MutableJob job : toCancel) {
+            cancelJob(job);
+        }
+        if (wait && killRunning && p != null) {
+            try {
+                p.waitFor(5, TimeUnit.SECONDS);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+        }
     }
 
     private void cancelJobsForPathPrefix(Path shareRoot) {

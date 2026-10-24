@@ -2,8 +2,10 @@ package com.solocrew.crewcast;
 
 import com.solocrew.crewcast.access.ClientIpResolver;
 import com.solocrew.crewcast.facade.SharingService;
+import com.solocrew.crewcast.media.AudioFixJobState;
 import com.solocrew.crewcast.media.AudioFixService;
 import com.solocrew.crewcast.media.AudioFixStatus;
+import com.solocrew.crewcast.media.InvalidAudioTrackException;
 import com.solocrew.crewcast.media.CompatFixService;
 import com.solocrew.crewcast.media.ConversionClientIds;
 import com.solocrew.crewcast.media.ConversionProgressDto;
@@ -92,7 +94,7 @@ public class VideoController {
         }
         Path path = video.path();
         ProbedMedia media = audioFixService.probe(path);
-        int selected = audio != null ? audio : audioFixService.defaultAudioIndex(media);
+        int selected = audioFixService.resolveAudioIndexStrict(media, audio);
         AudioFixStatus audioStatus = audioFixService.statusFor(path, selected);
         String prepareHint = audioFixService.prepareTimeHint(path);
 
@@ -164,7 +166,7 @@ public class VideoController {
     @GetMapping("/api/videos/{id}/compat-status")
     public ResponseEntity<ConversionProgressDto> compatStatus(
             @PathVariable String id,
-            @RequestParam(name = "audio", defaultValue = "0") int audio,
+            @RequestParam(name = "audio", required = false) Integer audio,
             @RequestParam(name = "clientId", required = false) String clientId,
             HttpServletRequest request) throws Exception {
         VideoFile video = shareRegistry.findById(id).orElse(null);
@@ -174,14 +176,25 @@ public class VideoController {
         touchViewer(request, video);
         Path path = video.path();
         String normalizedClientId = ConversionClientIds.normalize(clientId);
-        AudioFixStatus st = compatFixService.statusFor(path, audio, true);
-        return ResponseEntity.ok(ConversionProgressDto.from(st, normalizedClientId));
+        try {
+            AudioFixStatus st = compatFixService.statusFor(path, audio);
+            return ResponseEntity.ok(ConversionProgressDto.from(st, normalizedClientId));
+        } catch (InvalidAudioTrackException ex) {
+            return ResponseEntity.badRequest().body(
+                    ConversionProgressDto.from(
+                            new AudioFixStatus(
+                                    AudioFixJobState.FAILED,
+                                    0,
+                                    ex.getMessage(),
+                                    ""),
+                            normalizedClientId));
+        }
     }
 
     @PostMapping("/api/videos/{id}/compat/prepare")
     public ResponseEntity<ConversionProgressDto> prepareCompat(
             @PathVariable String id,
-            @RequestParam(name = "audio", defaultValue = "0") int audio,
+            @RequestParam(name = "audio", required = false) Integer audio,
             @RequestParam(name = "clientId", required = false) String clientId,
             HttpServletRequest request) throws Exception {
         VideoFile video = shareRegistry.findById(id).orElse(null);
@@ -190,10 +203,23 @@ public class VideoController {
         }
         touchViewer(request, video);
         Path path = video.path();
+        ProbedMedia media = audioFixService.probe(path);
         String label = viewerLabel(request);
         String normalizedClientId = ConversionClientIds.normalize(clientId);
-        AudioFixStatus st = compatFixService.prepareCompat(path, audio, true, label, normalizedClientId);
-        return ResponseEntity.ok(ConversionProgressDto.from(st, normalizedClientId));
+        try {
+            int resolvedAudio = audioFixService.resolveAudioIndexStrict(media, audio);
+            AudioFixStatus st = compatFixService.prepareCompat(path, resolvedAudio, true, label, normalizedClientId);
+            return ResponseEntity.ok(ConversionProgressDto.from(st, normalizedClientId));
+        } catch (InvalidAudioTrackException ex) {
+            return ResponseEntity.badRequest().body(
+                    ConversionProgressDto.from(
+                            new AudioFixStatus(
+                                    AudioFixJobState.FAILED,
+                                    0,
+                                    ex.getMessage(),
+                                    ""),
+                            normalizedClientId));
+        }
     }
 
     @GetMapping("/api/videos/{id}/audio-status")
@@ -264,13 +290,11 @@ public class VideoController {
         }
 
         ProbedMedia media = audioFixService.probe(path);
-        int audioIndex = audio != null ? audio : audioFixService.defaultAudioIndex(media);
-        if (!media.audioTracks().isEmpty()) {
-            if (audioIndex < 0 || audioIndex >= media.audioTracks().size()) {
-                audioIndex = media.audioTracks().getFirst().audioIndex();
-            }
-        } else {
-            audioIndex = 0;
+        int audioIndex;
+        try {
+            audioIndex = audioFixService.resolveAudioIndexStrict(media, audio);
+        } catch (InvalidAudioTrackException ex) {
+            return ResponseEntity.badRequest().body(Map.of("message", ex.getMessage()));
         }
 
         if (compat) {

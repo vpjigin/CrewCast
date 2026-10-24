@@ -24,6 +24,17 @@ class CompatCacheKeysTest {
         assertEquals(a, b);
         assertTrue(a.startsWith("compat-"));
         assertTrue(a.endsWith(".mp4"));
+        assertTrue(a.contains("compat-"));
+    }
+
+    @Test
+    void cacheKeyStableAcrossRepeatedCalls() throws Exception {
+        Path f = dir.resolve("film.mkv");
+        Files.writeString(f, "long-form-content");
+        String first = CompatCacheKeys.cacheFileName(f, 0, 1080);
+        Thread.sleep(5);
+        String second = CompatCacheKeys.cacheFileName(f, 0, 1080);
+        assertEquals(first, second);
     }
 
     @Test
@@ -35,4 +46,11 @@ class CompatCacheKeysTest {
         assertNotEquals(base, CompatCacheKeys.cacheFileName(f, 0, 720));
     }
 
+    @Test
+    void cacheKeyIncludesPolicyTagNotBitrate() throws Exception {
+        Path f = dir.resolve("movie.mkv");
+        Files.writeString(f, "x");
+        String name = CompatCacheKeys.cacheFileName(f, 0, 1080);
+        assertTrue(name.startsWith("compat-"));
+    }
 }

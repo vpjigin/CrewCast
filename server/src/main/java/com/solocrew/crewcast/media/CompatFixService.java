@@ -49,6 +49,7 @@ public class CompatFixService {
     private final Map<String, Job> jobs = new ConcurrentHashMap<>();
     private final CopyOnWriteArrayList<Runnable> progressListeners = new CopyOnWriteArrayList<>();
     private volatile long lastProgressNotifyMs;
+    private volatile java.util.concurrent.ScheduledFuture<?> pendingProgressNotify;
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "compat-fix-worker");
         t.setDaemon(true);
@@ -117,7 +118,7 @@ public class CompatFixService {
 
     public void onSharingStopped() {
         stopPeriodicRescan();
-        cancelAll(true);
+        cancelViewerJobs(true);
     }
 
     public void onSharingStarted() {
@@ -167,29 +168,32 @@ public class CompatFixService {
             return failedStatus(source, audioIndex, NO_ENCODER_MESSAGE);
         }
         ProbedMedia media = audioFixService.probe(source);
-        if (Files.isRegularFile(cacheFile(source, audioIndex))) {
-            return readyStatus(source, audioIndex);
+        int audio = audioFixService.resolveAudioIndex(media, audioIndex);
+        if (Files.isRegularFile(cacheFile(source, audio, media))) {
+            return readyStatus(source, audio, media);
         }
-        String key = jobKey(source, audioIndex);
+        String key = jobKey(source, audio, media);
         Job existing = jobs.get(key);
         if (viewerInitiated && (existing == null || existing.state == AudioFixJobState.FAILED)) {
             if (countViewerQueuedJobs() >= ConversionLimits.MAX_VIEWER_QUEUED_JOBS) {
-                return failedStatus(source, audioIndex, ConversionLimits.HOST_BUSY_MESSAGE);
+                return failedStatus(source, audio, ConversionLimits.HOST_BUSY_MESSAGE);
             }
         }
-        enqueue(source, media, audioIndex, viewerInitiated, !viewerInitiated, viewerLabel, clientId);
+        enqueue(source, media, audio, viewerInitiated, !viewerInitiated, viewerLabel, clientId);
         notifyProgressThrottled();
-        return statusFor(source, audioIndex);
+        return statusFor(source, audio);
     }
 
     public AudioFixStatus prepareHostDefaultTrack(Path source) throws IOException, InterruptedException {
         ProbedMedia media = audioFixService.probe(source);
-        int audio = audioFixService.defaultAudioIndex(media);
+        int audio = audioFixService.resolveAudioIndex(media, null);
         return prepareCompat(source, audio, false);
     }
 
     public void cancelForVideo(Path source) throws IOException, InterruptedException {
-        String key = jobKey(source, audioFixService.defaultAudioIndex(audioFixService.probe(source)));
+        ProbedMedia media = audioFixService.probe(source);
+        int audio = audioFixService.resolveAudioIndex(media, null);
+        String key = jobKey(source, audio, media);
         Job job = jobs.get(key);
         if (job != null && (job.state == AudioFixJobState.QUEUED || job.state == AudioFixJobState.RUNNING)) {
             cancelJob(job);
@@ -199,7 +203,7 @@ public class CompatFixService {
 
     public CompatUiState uiStateForDefaultTrack(Path source) throws IOException, InterruptedException {
         ProbedMedia media = audioFixService.probe(source);
-        int audio = audioFixService.defaultAudioIndex(media);
+        int audio = audioFixService.resolveAudioIndex(media, null);
         PrepareCompatMode mode = settingsStore.getSettings().getPrepareCompatInAdvance();
         boolean cacheReady = Files.isRegularFile(cacheFile(source, audio));
         AudioFixStatus st = statusFor(source, audio, false);
@@ -209,14 +213,14 @@ public class CompatFixService {
     public String tooltipForDefaultTrack(Path source) throws IOException, InterruptedException {
         CompatUiState state = uiStateForDefaultTrack(source);
         ProbedMedia media = audioFixService.probe(source);
-        int audio = audioFixService.defaultAudioIndex(media);
+        int audio = audioFixService.resolveAudioIndex(media, null);
         AudioFixStatus st = statusFor(source, audio, false);
         return describeUiState(state, st.progress(), st.message());
     }
 
     public int progressForDefaultTrack(Path source) throws IOException, InterruptedException {
         ProbedMedia media = audioFixService.probe(source);
-        int audio = audioFixService.defaultAudioIndex(media);
+        int audio = audioFixService.resolveAudioIndex(media, null);
         return statusFor(source, audio, false).progress();
     }
 
@@ -225,7 +229,9 @@ public class CompatFixService {
             case NOT_NEEDED -> "TV version: not needed (already browser-safe)";
             case NEEDED -> "TV version: not prepared yet";
             case QUEUED -> "TV version: waiting in queue";
-            case CONVERTING -> "TV version: converting… " + progress + "%";
+            case CONVERTING -> detail != null && detail.startsWith("Finishing")
+                    ? detail
+                    : "TV version: converting… " + progress + "%";
             case READY -> "TV version: ready";
             case UNAVAILABLE -> detail != null && !detail.isBlank() ? detail : NO_ENCODER_MESSAGE;
             case FAILED -> detail != null && !detail.isBlank() ? detail : "TV version: conversion failed";
@@ -381,38 +387,65 @@ public class CompatFixService {
         return statusFor(source, audioIndex, false);
     }
 
+    public AudioFixStatus statusFor(Path source, Integer audioQuery) throws IOException {
+        ProbedMedia media = probeMedia(source);
+        int audio = audioFixService.resolveAudioIndexStrict(media, audioQuery);
+        return statusFor(source, media, audio, false);
+    }
+
     public AudioFixStatus statusFor(Path source, int audioIndex, boolean unusedRecordPoll) throws IOException {
-        String key = jobKey(source, audioIndex);
+        ProbedMedia media = probeMedia(source);
+        int audio = audioFixService.resolveAudioIndex(media, audioIndex);
+        return statusFor(source, media, audio, unusedRecordPoll);
+    }
+
+    private AudioFixStatus statusFor(
+            Path source, ProbedMedia media, int audioIndex, boolean unusedRecordPoll) throws IOException {
+        String key = jobKey(source, audioIndex, media);
         Job job = jobs.get(key);
         if (job != null && job.state != AudioFixJobState.FAILED) {
-            if (job.state == AudioFixJobState.READY || Files.isRegularFile(cacheFile(source, audioIndex))) {
-                return readyStatus(source, audioIndex);
+            if (job.state == AudioFixJobState.READY || Files.isRegularFile(cacheFile(source, audioIndex, media))) {
+                return readyStatus(source, audioIndex, media);
             }
             return job.toStatus(key, queueAheadFor(source, audioIndex));
         }
-        if (Files.isRegularFile(cacheFile(source, audioIndex))) {
-            return readyStatus(source, audioIndex);
+        if (Files.isRegularFile(cacheFile(source, audioIndex, media))) {
+            return readyStatus(source, audioIndex, media);
         }
         return new AudioFixStatus(
                 AudioFixJobState.NOT_PREPARED, 0, "Not prepared", key,
                 null, null, null, null, null, null);
     }
 
+    public AudioFixService.ServeResult resolvePlayback(Path source, Integer audioQuery)
+            throws IOException, InterruptedException {
+        ProbedMedia media = audioFixService.probe(source);
+        int audio = audioFixService.resolveAudioIndexStrict(media, audioQuery);
+        return resolvePlayback(source, media, audio);
+    }
+
     public AudioFixService.ServeResult resolvePlayback(Path source, int audioIndex) throws IOException, InterruptedException {
+        ProbedMedia media = audioFixService.probe(source);
+        int audio = audioFixService.resolveAudioIndex(media, audioIndex);
+        return resolvePlayback(source, media, audio);
+    }
+
+    private AudioFixService.ServeResult resolvePlayback(Path source, ProbedMedia media, int audioIndex)
+            throws IOException, InterruptedException {
         if (!ffmpegManager.isAvailable() || resolveEncoderName() == null) {
             return new AudioFixService.ServeResult(
                     Optional.empty(),
                     false,
                     failedStatus(source, audioIndex, NO_ENCODER_MESSAGE));
         }
-        Path cached = cacheFile(source, audioIndex);
+        Path cached = cacheFile(source, audioIndex, media);
         if (Files.isRegularFile(cached)) {
             touch(cached);
             return new AudioFixService.ServeResult(
-                    Optional.of(cached), false, readyStatus(source, audioIndex));
+                    Optional.of(cached), false, readyStatus(source, audioIndex, media));
         }
         return new AudioFixService.ServeResult(
-                Optional.empty(), false, statusFor(source, audioIndex));
+                Optional.empty(), false, statusFor(source, media, audioIndex, false));
     }
 
     public int countRunningJobs() {
@@ -467,10 +500,10 @@ public class CompatFixService {
             boolean hostInitiated,
             String viewerLabel,
             String clientId) throws IOException {
-        String key = jobKey(source, audioIndex);
+        String key = jobKey(source, audioIndex, media);
         jobs.computeIfAbsent(key, k -> new Job(source, audioIndex, media));
         Job job = jobs.get(key);
-        if (Files.isRegularFile(cacheFile(source, audioIndex))) {
+        if (Files.isRegularFile(cacheFile(source, audioIndex, media))) {
             job.state = AudioFixJobState.READY;
             job.progress = 100;
             return;
@@ -498,14 +531,39 @@ public class CompatFixService {
 
     private void notifyProgressThrottled() {
         long now = System.currentTimeMillis();
-        if (now - lastProgressNotifyMs < 400) {
+        long elapsed = now - lastProgressNotifyMs;
+        if (elapsed >= 400) {
+            fireProgressListeners();
             return;
         }
-        lastProgressNotifyMs = now;
+        if (pendingProgressNotify == null || pendingProgressNotify.isDone()) {
+            pendingProgressNotify = autoPrepareScheduler.schedule(
+                    this::fireProgressListeners, 400 - elapsed, TimeUnit.MILLISECONDS);
+        }
+    }
+
+    private void fireProgressListeners() {
+        lastProgressNotifyMs = System.currentTimeMillis();
+        if (log.isDebugEnabled()) {
+            for (Job j : jobs.values()) {
+                if (j.state == AudioFixJobState.QUEUED || j.state == AudioFixJobState.RUNNING) {
+                    log.debug(
+                            "Compat job notify: path={} audio={} state={} progress={}% speed={} eta={}s key={}",
+                            j.source,
+                            j.audioIndex,
+                            j.state,
+                            j.progress,
+                            j.speed,
+                            j.etaSeconds,
+                            jobKeySafe(j));
+                }
+            }
+        }
         for (Runnable r : progressListeners) {
             try {
                 r.run();
-            } catch (Exception ignored) {
+            } catch (Exception ex) {
+                log.warn("Compat progress listener failed", ex);
             }
         }
     }
@@ -533,7 +591,7 @@ public class CompatFixService {
     private void runJob(String key, Job job) {
         Path out;
         try {
-            out = cacheFile(job.source, job.audioIndex);
+            out = cacheFile(job.source, job.audioIndex, job.media);
         } catch (IOException e) {
             job.fail(e.getMessage());
             return;
@@ -556,8 +614,21 @@ public class CompatFixService {
             job.message = "Preparing compatible version";
             job.speed = null;
             job.etaSeconds = null;
-            double durationSec = probeDuration(job.source);
+            notifyProgressThrottled();
+            double durationSec = resolveDurationSec(job.source, job.media);
             job.durationSec = durationSec;
+            if (durationSec <= 0) {
+                job.fail("Cannot probe video duration (required for TV version conversion)");
+                return;
+            }
+            if (log.isDebugEnabled()) {
+                log.debug(
+                        "Compat job duration: path={} durationSec={} (format={} probe={})",
+                        job.source,
+                        durationSec,
+                        job.media.formatDurationSec(),
+                        probeDuration(job.source));
+            }
             int maxH = settingsStore.getSettings().getCompatMaxHeight();
             boolean tonemap = job.media.video() != null && job.media.video().isHdr()
                     && CompatTranscodePlanner.encoderLikelySupportsTonemap(encoder);
@@ -581,19 +652,50 @@ public class CompatFixService {
             runningKey = key;
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                FfmpegProgressParser.ProgressState pState = new FfmpegProgressParser.ProgressState(job.progress);
+                pState.speed = job.speed;
                 String line;
                 while ((line = reader.readLine()) != null) {
+                    int prevProgress = job.progress;
+                    Double prevSpeed = job.speed;
+                    Integer prevEta = job.etaSeconds;
+                    boolean prevFinishing = job.finishing;
                     FfmpegProgressParser.Snapshot snap =
-                            FfmpegProgressParser.applyLine(line, job.durationSec, job.progress);
+                            FfmpegProgressParser.applyLine(line, job.durationSec, pState);
+                    pState.progress = snap.progress;
+                    pState.finishing = snap.finishing;
                     job.progress = snap.progress;
+                    job.finishing = snap.finishing;
                     if (snap.speed != null && snap.speed > 0) {
                         job.speed = snap.speed;
+                        pState.speed = snap.speed;
                     }
                     if (snap.etaSeconds != null) {
                         job.etaSeconds = snap.etaSeconds;
+                    } else if (job.speed != null && job.speed > 0 && job.durationSec > 0 && job.progress < 99 && !job.finishing) {
+                        double outSec = (job.progress / 100.0) * job.durationSec;
+                        job.etaSeconds = (int) Math.ceil(Math.max(0, job.durationSec - outSec) / job.speed);
                     }
-                    if (line.startsWith("out_time_us=") || line.startsWith("progress=end")) {
-                        job.message = "Preparing compatible version… " + job.progress + "%";
+                    boolean changed = job.progress != prevProgress
+                            || job.finishing != prevFinishing
+                            || (job.speed != null && !job.speed.equals(prevSpeed))
+                            || (job.etaSeconds != null && !job.etaSeconds.equals(prevEta));
+                    if (log.isDebugEnabled()
+                            && (line.startsWith("out_time") || line.startsWith("speed=") || line.startsWith("progress="))) {
+                        log.debug(
+                                "Compat ffmpeg progress: path={} line={} progress={}% finishing={} speed={} eta={}s durationSec={}",
+                                job.source,
+                                line,
+                                job.progress,
+                                job.finishing,
+                                job.speed,
+                                job.etaSeconds,
+                                job.durationSec);
+                    }
+                    if (changed) {
+                        job.message = job.finishing
+                                ? "Finishing up…"
+                                : "Preparing compatible version… " + job.progress + "%";
                         notifyProgressThrottled();
                     }
                 }
@@ -651,6 +753,19 @@ public class CompatFixService {
         enqueue(source, media, audioIndex, viewerInitiated, !viewerInitiated, viewerLabel, null);
     }
 
+    /** Package tests: set job state without starting the worker (no ffmpeg). */
+    void testInstallJob(Path source, ProbedMedia media, int audioIndex, AudioFixJobState state, int progress)
+            throws IOException {
+        String key = jobKey(source, audioIndex, media);
+        Job job = jobs.computeIfAbsent(key, k -> new Job(source, audioIndex, media));
+        job.state = state;
+        job.progress = progress;
+        job.message = state == AudioFixJobState.QUEUED ? "Queued" : "Preparing compatible version… " + progress + "%";
+        job.startedBy = ConversionStartedBy.HOST;
+        job.hostInitiated = true;
+        job.viewerInitiated = false;
+    }
+
     int activeJobCount() {
         return jobs.size();
     }
@@ -663,8 +778,32 @@ public class CompatFixService {
         resolvedEncoder = encoder;
     }
 
+    void testSetJobProgress(Path source, int audioIndex, int progress) throws IOException {
+        Job job = jobs.get(jobKey(source, audioIndex));
+        if (job != null) {
+            job.progress = progress;
+            return;
+        }
+        ProbedMedia media = probeMedia(source);
+        job = jobs.get(jobKey(source, audioIndex, media));
+        if (job != null) {
+            job.progress = progress;
+        }
+    }
+
+    /** Package tests: invoke progress listeners without waiting for throttle. */
+    void testFireProgressListeners() {
+        fireProgressListeners();
+    }
+
     void testSetJobState(Path source, int audioIndex, AudioFixJobState state) throws IOException {
         Job job = jobs.get(jobKey(source, audioIndex));
+        if (job != null) {
+            job.state = state;
+            return;
+        }
+        ProbedMedia media = probeMedia(source);
+        job = jobs.get(jobKey(source, audioIndex, media));
         if (job != null) {
             job.state = state;
         }
@@ -689,7 +828,7 @@ public class CompatFixService {
             ConversionPartFiles.deleteIfExists(job.outputPath);
         } else {
             try {
-                ConversionPartFiles.deleteIfExists(cacheFile(job.source, job.audioIndex));
+                ConversionPartFiles.deleteIfExists(cacheFile(job.source, job.audioIndex, job.media));
             } catch (IOException ignored) {
             }
         }
@@ -697,7 +836,7 @@ public class CompatFixService {
 
     private String jobKeySafe(Job job) {
         try {
-            return jobKey(job.source, job.audioIndex);
+            return jobKey(job.source, job.audioIndex, job.media);
         } catch (IOException e) {
             return "";
         }
@@ -723,10 +862,35 @@ public class CompatFixService {
         jobs.clear();
     }
 
-    private AudioFixStatus readyStatus(Path source, int audioIndex) throws IOException {
+    /** Stops viewer-started jobs when sharing ends; host prep continues. */
+    public void cancelViewerJobs(boolean killProcess) {
+        List<Job> toCancel = jobs.values().stream()
+                .filter(j -> j.viewerInitiated || j.startedBy == ConversionStartedBy.VIEWER)
+                .filter(j -> j.state == AudioFixJobState.QUEUED || j.state == AudioFixJobState.RUNNING)
+                .toList();
+        for (Job job : toCancel) {
+            cancelJob(job);
+        }
+        notifyProgressThrottled();
+    }
+
+    private AudioFixStatus readyStatus(Path source, int audioIndex, ProbedMedia media) throws IOException {
         return new AudioFixStatus(
-                AudioFixJobState.READY, 100, "Ready", jobKey(source, audioIndex),
+                AudioFixJobState.READY, 100, "Ready", jobKey(source, audioIndex, media),
                 null, null, null, null, null, null);
+    }
+
+    private AudioFixStatus readyStatus(Path source, int audioIndex) throws IOException {
+        return readyStatus(source, audioIndex, probeMedia(source));
+    }
+
+    private ProbedMedia probeMedia(Path source) throws IOException {
+        try {
+            return audioFixService.probe(source);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while probing media", e);
+        }
     }
 
     private AudioFixStatus failedStatus(Path source, int audioIndex, String msg) throws IOException {
@@ -735,14 +899,22 @@ public class CompatFixService {
                 null, null, null, null, null, null);
     }
 
-    private Path cacheFile(Path source, int audioIndex) throws IOException {
+    private Path cacheFile(Path source, int audioIndex, ProbedMedia media) throws IOException {
         int maxH = settingsStore.getSettings().getCompatMaxHeight();
         return CrewcastPaths.cacheDir().resolve(CompatCacheKeys.cacheFileName(source, audioIndex, maxH));
     }
 
+    private Path cacheFile(Path source, int audioIndex) throws IOException {
+        return cacheFile(source, audioIndex, probeMedia(source));
+    }
+
+    private String jobKey(Path source, int audioIndex, ProbedMedia media) throws IOException {
+        int maxH = settingsStore.getSettings().getCompatMaxHeight();
+        return CompatCacheKeys.cacheFileName(source, audioIndex, maxH).replace(".mp4", "");
+    }
+
     private String jobKey(Path source, int audioIndex) throws IOException {
-        return CompatCacheKeys.cacheFileName(source, audioIndex, settingsStore.getSettings().getCompatMaxHeight())
-                .replace(".mp4", "");
+        return jobKey(source, audioIndex, probeMedia(source));
     }
 
     private boolean ensureDiskSpace() throws IOException {
@@ -811,12 +983,55 @@ public class CompatFixService {
         Files.setLastModifiedTime(file, java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis()));
     }
 
+    /**
+     * Rough prep-time guess from file duration (~2× realtime GPU transcode). Empty when unknown.
+     */
+    public Integer estimatedPrepareMinutesFor(Path source) {
+        double d = probeDuration(source);
+        if (d <= 0) {
+            return null;
+        }
+        return Math.max(1, (int) Math.round(d / 120.0));
+    }
+
+    private double resolveDurationSec(Path file, ProbedMedia media) {
+        double d = probeDuration(file);
+        if (d > 0) {
+            return d;
+        }
+        if (media != null && media.formatDurationSec() > 0) {
+            return media.formatDurationSec();
+        }
+        return probeVideoStreamDuration(file);
+    }
+
     private double probeDuration(Path file) {
         try {
             Process p = new ProcessBuilder(
                     ffmpegManager.ffprobe().toString(),
                     "-v", "error",
                     "-show_entries", "format=duration",
+                    "-of", "default=noprint_wrappers=1:nokey=1",
+                    file.toString())
+                    .redirectErrorStream(true)
+                    .start();
+            try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
+                String line = r.readLine();
+                p.waitFor(10, TimeUnit.SECONDS);
+                return line != null ? Double.parseDouble(line.trim()) : 0;
+            }
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    private double probeVideoStreamDuration(Path file) {
+        try {
+            Process p = new ProcessBuilder(
+                    ffmpegManager.ffprobe().toString(),
+                    "-v", "error",
+                    "-select_streams", "v:0",
+                    "-show_entries", "stream=duration",
                     "-of", "default=noprint_wrappers=1:nokey=1",
                     file.toString())
                     .redirectErrorStream(true)
@@ -859,6 +1074,7 @@ public class CompatFixService {
         volatile Double speed;
         volatile Integer etaSeconds;
         volatile double durationSec;
+        volatile boolean finishing;
         volatile Path outputPath;
 
         Job(Path source, int audioIndex, ProbedMedia media) {

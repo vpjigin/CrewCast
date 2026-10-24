@@ -15,6 +15,8 @@ import com.solocrew.crewcast.system.CrewcastDiagnostics;
 import com.solocrew.crewcast.system.CrewcastPaths;
 import com.solocrew.crewcast.media.FfmpegManager;
 import com.solocrew.crewcast.media.VideoBrowserContainers;
+import com.solocrew.crewcast.media.ProbedMedia;
+import com.solocrew.crewcast.media.ShareVideoDetailsMeta;
 import com.solocrew.crewcast.media.SubtitleService;
 import com.solocrew.crewcast.settings.FfmpegDownloadConsent;
 import com.solocrew.crewcast.access.AccessSession;
@@ -32,6 +34,8 @@ import com.solocrew.crewcast.viewers.ViewerRecord;
 import com.solocrew.crewcast.viewers.ViewerRegistry;
 import com.solocrew.crewcast.web.ServerPortHolder;
 import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.web.context.WebServerInitializedEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
@@ -47,6 +51,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 @Service
 public class SharingService implements CloudflaredListener, FfmpegDownloadListener {
+
+    private static final Logger log = LoggerFactory.getLogger(SharingService.class);
 
     private final ShareRegistry shareRegistry;
     private final SettingsStore settingsStore;
@@ -281,6 +287,10 @@ public class SharingService implements CloudflaredListener, FfmpegDownloadListen
         compatFixService.cancelForVideo(videoPath);
     }
 
+    public Integer estimateCompatPrepareMinutes(java.nio.file.Path video) {
+        return compatFixService.estimatedPrepareMinutesFor(video);
+    }
+
     public ConversionQueueSummary conversionQueueSummary() throws IOException {
         return new ConversionQueueSummary(
                 compatFixService.countRunningJobs(),
@@ -294,93 +304,277 @@ public class SharingService implements CloudflaredListener, FfmpegDownloadListen
         }
     }
 
+    /**
+     * Share rows without ffprobe / compat probing — for immediate UI while {@link #listShares()} runs off the EDT.
+     */
+    public List<ShareListItem> listSharesSkeleton() {
+        List<ShareEntry> entries = shareRegistry.listShareEntries();
+        List<ShareListItem> out = new ArrayList<>();
+        for (int i = 0; i < entries.size(); i++) {
+            ShareEntry e = entries.get(i);
+            out.add(new ShareListItem(
+                    i,
+                    e,
+                    describeShare(e),
+                    "",
+                    "",
+                    false,
+                    "",
+                    CompatUiState.NOT_NEEDED,
+                    0,
+                    "",
+                    false,
+                    false,
+                    0,
+                    null,
+                    null,
+                    null,
+                    null,
+                    List.of()));
+        }
+        return out;
+    }
+
+    public int shareEntryCount() {
+        return shareRegistry.listShareEntries().size();
+    }
+
     public List<ShareListItem> listShares() {
         List<ShareEntry> entries = shareRegistry.listShareEntries();
         List<ShareListItem> out = new ArrayList<>();
         for (int i = 0; i < entries.size(); i++) {
             ShareEntry e = entries.get(i);
-            int videos = countVideosInShare(e);
-            String compatSummary = videos > 0 ? compatFixService.summarizeForShare(e) : "";
-            CompatUiState fileState = CompatUiState.NOT_NEEDED;
-            int fileProgress = 0;
-            String fileTooltip = "";
-            boolean canPrepare = false;
-            boolean canCancel = false;
-            int fileQueueAhead = 0;
-            Double fileSpeed = null;
-            Integer fileEta = null;
-            com.solocrew.crewcast.media.ConversionStartedBy fileStartedBy = null;
-            String fileStartedByLabel = null;
-            List<ShareVideoCompatRow> folderVideos = List.of();
-            try {
-                if (e.getKind() == ShareEntry.Kind.FILE && ShareRegistry.isVideoFileName(Path.of(e.getPath()).getFileName().toString())) {
-                    Path vp = Path.of(e.getPath());
-                    fileState = compatFixService.uiStateForDefaultTrack(vp);
-                    fileTooltip = compatFixService.tooltipForDefaultTrack(vp);
-                    AudioFixStatus job = compatJobStatus(vp);
-                    fileProgress = job.progress();
-                    fileQueueAhead = job.queueAhead() != null ? job.queueAhead() : 0;
-                    fileSpeed = job.speed();
-                    fileEta = job.etaSeconds();
-                    fileStartedBy = job.startedBy();
-                    fileStartedByLabel = job.startedByLabel();
-                    canPrepare = canPrepareCompat(fileState, compatFixService.isAvailable());
-                    canCancel = canCancelCompat(fileState);
-                } else if (e.getKind() == ShareEntry.Kind.FOLDER) {
-                    folderVideos = listFolderVideoCompatRows(e);
-                }
-            } catch (Exception ignored) {
-                fileState = CompatUiState.UNAVAILABLE;
-                fileTooltip = CompatFixService.NO_ENCODER_MESSAGE;
-            }
-            out.add(new ShareListItem(
-                    i,
-                    e,
-                    describeShare(e),
-                    videos > 0 ? audioFixService.summarizeForShare(e) : "",
-                    subtitleService.summarizeForShare(e),
-                    audioFixService.hevcWarningForShare(e),
-                    compatSummary,
-                    fileState,
-                    fileProgress,
-                    fileTooltip,
-                    canPrepare,
-                    canCancel,
-                    fileQueueAhead,
-                    fileSpeed,
-                    fileEta,
-                    fileStartedBy,
-                    fileStartedByLabel,
-                    folderVideos));
+            out.add(buildShareListItem(i, e));
         }
         return out;
     }
 
+    /**
+     * Re-probes compat job state for existing rows (no share-registry walk beyond cached paths).
+     * Used when ffmpeg progress ticks so the desktop UI is not blocked behind a full {@link #listShares()}.
+     */
+    public List<ShareListItem> refreshCompatFieldsOnItems(List<ShareListItem> items) {
+        List<ShareListItem> out = new ArrayList<>(items.size());
+        for (ShareListItem item : items) {
+            out.add(refreshCompatFieldsOnItem(item));
+        }
+        return out;
+    }
+
+    private ShareListItem refreshCompatFieldsOnItem(ShareListItem item) {
+        ShareEntry e = item.entry();
+        try {
+            if (e.getKind() == ShareEntry.Kind.FILE
+                    && ShareRegistry.isVideoFileName(Path.of(e.getPath()).getFileName().toString())) {
+                Path vp = Path.of(e.getPath());
+                CompatFields f = compatFieldsForVideo(vp);
+                logCompatRow(vp, f);
+                return new ShareListItem(
+                        item.index(),
+                        item.entry(),
+                        item.meta(),
+                        item.audioMeta(),
+                        item.subtitleMeta(),
+                        item.hevcWarning(),
+                        item.compatSummary(),
+                        f.state(),
+                        f.progress(),
+                        f.tooltip(),
+                        f.canPrepare(),
+                        f.canCancel(),
+                        f.queueAhead(),
+                        f.speed(),
+                        f.etaSeconds(),
+                        f.startedBy(),
+                        f.startedByLabel(),
+                        item.folderVideos());
+            }
+            if (e.getKind() == ShareEntry.Kind.FOLDER && item.folderVideos() != null && !item.folderVideos().isEmpty()) {
+                List<ShareVideoCompatRow> videos = new ArrayList<>();
+                for (ShareVideoCompatRow row : item.folderVideos()) {
+                    CompatFields f = compatFieldsForVideo(row.path());
+                    logCompatRow(row.path(), f);
+                    videos.add(new ShareVideoCompatRow(
+                            row.path(),
+                            row.displayName(),
+                            f.state(),
+                            f.progress(),
+                            f.tooltip(),
+                            f.canPrepare(),
+                            f.canCancel(),
+                            f.queueAhead(),
+                            f.speed(),
+                            f.etaSeconds(),
+                            f.startedBy(),
+                            f.startedByLabel()));
+                }
+                return new ShareListItem(
+                        item.index(),
+                        item.entry(),
+                        item.meta(),
+                        item.audioMeta(),
+                        item.subtitleMeta(),
+                        item.hevcWarning(),
+                        item.compatSummary(),
+                        item.fileCompatState(),
+                        item.fileCompatProgress(),
+                        item.fileCompatTooltip(),
+                        item.fileCompatCanPrepare(),
+                        item.fileCompatCanCancel(),
+                        item.fileCompatQueueAhead(),
+                        item.fileCompatSpeed(),
+                        item.fileCompatEtaSeconds(),
+                        item.fileCompatStartedBy(),
+                        item.fileCompatStartedByLabel(),
+                        videos);
+            }
+        } catch (Exception ex) {
+            log.debug("Compat refresh failed for {}", e.getPath(), ex);
+        }
+        return item;
+    }
+
+    private ShareListItem buildShareListItem(int index, ShareEntry e) {
+        int videos = countVideosInShare(e);
+        String metaLine = describeShare(e);
+        String audioMetaLine = videos > 0 ? audioFixService.summarizeForShare(e) : "";
+        String compatSummary = videos > 0 ? compatFixService.summarizeForShare(e) : "";
+        if (e.getKind() == ShareEntry.Kind.FILE
+                && ShareRegistry.isVideoFileName(Path.of(e.getPath()).getFileName().toString())) {
+            try {
+                Path vp = Path.of(e.getPath());
+                ProbedMedia media = audioFixService.probe(vp);
+                metaLine = ShareVideoDetailsMeta.format(vp, media, audioFixService);
+                audioMetaLine = "";
+                compatSummary = "";
+            } catch (Exception ex) {
+                log.debug("Video details meta failed for {}", e.getPath(), ex);
+            }
+        }
+        CompatUiState fileState = CompatUiState.NOT_NEEDED;
+        int fileProgress = 0;
+        String fileTooltip = "";
+        boolean canPrepare = false;
+        boolean canCancel = false;
+        int fileQueueAhead = 0;
+        Double fileSpeed = null;
+        Integer fileEta = null;
+        com.solocrew.crewcast.media.ConversionStartedBy fileStartedBy = null;
+        String fileStartedByLabel = null;
+        List<ShareVideoCompatRow> folderVideos = List.of();
+        try {
+            if (e.getKind() == ShareEntry.Kind.FILE
+                    && ShareRegistry.isVideoFileName(Path.of(e.getPath()).getFileName().toString())) {
+                Path vp = Path.of(e.getPath());
+                CompatFields f = compatFieldsForVideo(vp);
+                logCompatRow(vp, f);
+                fileState = f.state();
+                fileProgress = f.progress();
+                fileTooltip = f.tooltip();
+                canPrepare = f.canPrepare();
+                canCancel = f.canCancel();
+                fileQueueAhead = f.queueAhead();
+                fileSpeed = f.speed();
+                fileEta = f.etaSeconds();
+                fileStartedBy = f.startedBy();
+                fileStartedByLabel = f.startedByLabel();
+            } else if (e.getKind() == ShareEntry.Kind.FOLDER) {
+                folderVideos = listFolderVideoCompatRows(e);
+            }
+        } catch (Exception ignored) {
+            fileState = CompatUiState.UNAVAILABLE;
+            fileTooltip = CompatFixService.NO_ENCODER_MESSAGE;
+        }
+        return new ShareListItem(
+                index,
+                e,
+                metaLine,
+                audioMetaLine,
+                subtitleService.summarizeForShare(e),
+                audioFixService.hevcWarningForShare(e),
+                compatSummary,
+                fileState,
+                fileProgress,
+                fileTooltip,
+                canPrepare,
+                canCancel,
+                fileQueueAhead,
+                fileSpeed,
+                fileEta,
+                fileStartedBy,
+                fileStartedByLabel,
+                folderVideos);
+    }
+
+    private record CompatFields(
+            CompatUiState state,
+            int progress,
+            String tooltip,
+            boolean canPrepare,
+            boolean canCancel,
+            int queueAhead,
+            Double speed,
+            Integer etaSeconds,
+            com.solocrew.crewcast.media.ConversionStartedBy startedBy,
+            String startedByLabel,
+            AudioFixJobState jobState,
+            String cacheKey) {}
+
+    private CompatFields compatFieldsForVideo(Path vp) throws Exception {
+        CompatUiState fileState = compatFixService.uiStateForDefaultTrack(vp);
+        AudioFixStatus job = compatJobStatus(vp);
+        String fileTooltip = compatFixService.describeUiState(
+                fileState, job.progress(), job.message());
+        return new CompatFields(
+                fileState,
+                job.progress(),
+                fileTooltip,
+                canPrepareCompat(fileState, compatFixService.isAvailable()),
+                canCancelCompat(fileState),
+                job.queueAhead() != null ? job.queueAhead() : 0,
+                job.speed(),
+                job.etaSeconds(),
+                job.startedBy(),
+                job.startedByLabel(),
+                job.status(),
+                job.cacheKey());
+    }
+
+    private void logCompatRow(Path video, CompatFields f) {
+        if (log.isDebugEnabled()) {
+            log.debug(
+                    "Share row compat: path={} uiState={} progress={}% jobState={} cacheKey={}",
+                    video,
+                    f.state(),
+                    f.progress(),
+                    f.jobState(),
+                    f.cacheKey());
+        }
+    }
+
     private AudioFixStatus compatJobStatus(Path video) throws Exception {
         var media = audioFixService.probe(video);
-        int audio = audioFixService.defaultAudioIndex(media);
-        return compatFixService.statusFor(video, audio);
+        return compatFixService.statusFor(video, (Integer) null);
     }
 
     private List<ShareVideoCompatRow> listFolderVideoCompatRows(ShareEntry folder) throws Exception {
         List<ShareVideoCompatRow> rows = new ArrayList<>();
         for (Path v : shareRegistry.listVideosUnder(Path.of(folder.getPath()))) {
-            CompatUiState state = compatFixService.uiStateForDefaultTrack(v);
-            String tooltip = compatFixService.tooltipForDefaultTrack(v);
-            AudioFixStatus job = compatJobStatus(v);
+            CompatFields f = compatFieldsForVideo(v);
+            logCompatRow(v, f);
             rows.add(new ShareVideoCompatRow(
                     v,
                     v.getFileName().toString(),
-                    state,
-                    job.progress(),
-                    tooltip,
-                    canPrepareCompat(state, compatFixService.isAvailable()),
-                    canCancelCompat(state),
-                    job.queueAhead() != null ? job.queueAhead() : 0,
-                    job.speed(),
-                    job.etaSeconds(),
-                    job.startedBy(),
-                    job.startedByLabel()));
+                    f.state(),
+                    f.progress(),
+                    f.tooltip(),
+                    f.canPrepare(),
+                    f.canCancel(),
+                    f.queueAhead(),
+                    f.speed(),
+                    f.etaSeconds(),
+                    f.startedBy(),
+                    f.startedByLabel()));
         }
         return rows;
     }

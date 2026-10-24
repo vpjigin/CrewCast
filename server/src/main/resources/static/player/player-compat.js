@@ -171,7 +171,6 @@
     var dl = document.getElementById('conv-download-original');
     if (dl) {
       dl.href = originalDownloadHref(id, withToken);
-      dl.hidden = false;
     }
   }
 
@@ -182,15 +181,21 @@
     var bar = document.getElementById('conv-progress-bar');
     var startBtn = document.getElementById('conv-start-btn');
     var readyBtn = document.getElementById('conv-ready-play');
+    var dl = document.getElementById('conv-download-original');
+    var prepCancel = document.getElementById('audio-prep-cancel');
     if (!main) return;
-    var status = st && st.status ? st.status : '';
+    var status = st && st.status ? String(st.status).toUpperCase() : '';
     var pct = st && st.progress != null ? st.progress : 0;
     if (startBtn) startBtn.hidden = true;
     if (readyBtn) readyBtn.hidden = true;
+    if (dl) dl.hidden = true;
+    if (barWrap) barWrap.hidden = true;
+    if (sub) sub.hidden = true;
+    if (prepCancel) prepCancel.hidden = true;
     if (opts && opts.askHost) {
       main.textContent = 'Ask the host to convert this';
       if (sub) { sub.textContent = 'The host has not prepared a compatible version yet.'; sub.hidden = false; }
-      if (barWrap) barWrap.hidden = true;
+      if (dl) dl.hidden = false;
       return;
     }
     if (opts && opts.promptStart) {
@@ -199,14 +204,12 @@
         sub.textContent = 'Runs on the host\'s laptop, not your phone – you can leave and come back.';
         sub.hidden = false;
       }
-      if (barWrap) barWrap.hidden = true;
       if (startBtn) startBtn.hidden = false;
+      if (dl) dl.hidden = false;
       return;
     }
     if (status === 'READY') {
       main.textContent = 'Compatible version ready';
-      if (sub) sub.hidden = true;
-      if (barWrap) barWrap.hidden = true;
       if (readyBtn && !pageVisible) readyBtn.hidden = false;
       return;
     }
@@ -219,7 +222,8 @@
       if (eta) lines.unshift(eta);
       var by = startedByLine(st);
       if (by) lines.push(by);
-      if (sub) { sub.textContent = lines.join(' '); sub.hidden = false; }
+      if (sub) { sub.textContent = lines.join('\n'); sub.hidden = false; }
+      if (dl) dl.hidden = false;
     }
   }
 

@@ -46,6 +46,9 @@ class HostOwnedConversionTest extends CrewcastSpringTestBase {
     @Autowired
     SettingsStore settingsStore;
 
+    @Autowired
+    com.solocrew.crewcast.facade.SharingService sharingService;
+
     @BeforeEach
     void stubProbe() throws Exception {
         compatFixService.cancelAll(true);
@@ -63,7 +66,7 @@ class HostOwnedConversionTest extends CrewcastSpringTestBase {
         compatFixService.testSetResolvedEncoder("libx264");
     }
 
-    private static void register(Path file) {
+    static void registerProbe(Path file) {
         PROBES.put(file.toAbsolutePath().normalize(), media);
     }
 
@@ -80,19 +83,19 @@ class HostOwnedConversionTest extends CrewcastSpringTestBase {
         Path base = CrewcastPaths.home();
         Path running = base.resolve("running.mkv");
         Files.writeString(running, "r");
-        register(running);
+        registerProbe(running);
         compatFixService.testEnqueue(running, media, 0, true, "A");
         compatFixService.testSetJobState(running, 0, AudioFixJobState.RUNNING);
         for (int i = 0; i < 3; i++) {
             Path file = base.resolve("w" + i + ".mkv");
             Files.writeString(file, "a");
-            register(file);
+            registerProbe(file);
             compatFixService.testEnqueue(file, media, 0, true, "Viewer " + i);
         }
         assertEquals(3, compatFixService.viewerQueuedCount());
         Path extra = base.resolve("w4.mkv");
         Files.writeString(extra, "b");
-        register(extra);
+        registerProbe(extra);
         compatFixService.testSetResolvedEncoder("libx264");
         AudioFixStatus st = compatFixService.prepareCompat(extra, 0, true, "Extra");
         assertEquals(AudioFixJobState.FAILED, st.status());
@@ -105,13 +108,13 @@ class HostOwnedConversionTest extends CrewcastSpringTestBase {
         for (int i = 0; i < 3; i++) {
             Path file = base.resolve("q" + i + ".mkv");
             Files.writeString(file, "a");
-            register(file);
+            registerProbe(file);
             compatFixService.testEnqueue(file, media, 0, true, "Viewer " + i);
         }
         assertEquals(3, compatFixService.viewerQueuedCount());
         Path extra = base.resolve("q4.mkv");
         Files.writeString(extra, "b");
-        register(extra);
+        registerProbe(extra);
         AudioFixStatus st = compatFixService.prepareCompat(extra, 0, true, "Extra");
         assertEquals(AudioFixJobState.FAILED, st.status());
         assertEquals(ConversionLimits.HOST_BUSY_MESSAGE, st.message());
@@ -121,7 +124,7 @@ class HostOwnedConversionTest extends CrewcastSpringTestBase {
     void secondPrepareJoinsExistingJob() throws Exception {
         Path f = CrewcastPaths.home().resolve("one.mkv");
         Files.writeString(f, "x");
-        register(f);
+        registerProbe(f);
         compatFixService.testEnqueue(f, media, 0, true, "A");
         compatFixService.testEnqueue(f, media, 0, true, "B");
         assertEquals(1, compatFixService.activeJobCount());
@@ -131,7 +134,7 @@ class HostOwnedConversionTest extends CrewcastSpringTestBase {
     void queuedJobSurvivesWithoutStatusPolls() throws Exception {
         Path f = CrewcastPaths.home().resolve("idle.mkv");
         Files.writeString(f, "x");
-        register(f);
+        registerProbe(f);
         compatFixService.testEnqueue(f, media, 0, true, "Viewer");
         assertEquals(1, compatFixService.activeJobCount());
         Thread.sleep(500);
@@ -139,10 +142,29 @@ class HostOwnedConversionTest extends CrewcastSpringTestBase {
     }
 
     @Test
+    void stopSharingCancelsViewerJobsOnly() throws Exception {
+        Path hostFile = CrewcastPaths.home().resolve("host.mkv");
+        Path viewerFile = CrewcastPaths.home().resolve("viewer.mkv");
+        Files.writeString(hostFile, "h");
+        Files.writeString(viewerFile, "v");
+        registerProbe(hostFile);
+        registerProbe(viewerFile);
+        compatFixService.testInstallJob(hostFile, media, 0, AudioFixJobState.RUNNING, 40);
+        compatFixService.testEnqueue(viewerFile, media, 0, true, "Viewer");
+        assertEquals(2, compatFixService.activeJobCount());
+        sharingService.stopSharing();
+        assertEquals(1, compatFixService.activeJobCount());
+        AudioFixStatus host = compatFixService.statusFor(hostFile, 0);
+        assertEquals(AudioFixJobState.RUNNING, host.status());
+        assertEquals(40, host.progress());
+        compatFixService.cancelAll(true);
+    }
+
+    @Test
     void cancelRemovesPartFile() throws Exception {
         Path f = CrewcastPaths.home().resolve("cancel.mkv");
         Files.writeString(f, "x");
-        register(f);
+        registerProbe(f);
         compatFixService.testEnqueue(f, media, 0, false, null);
         Path out = CrewcastPaths.cacheDir().resolve(
                 CompatCacheKeys.cacheFileName(f, 0, 1080));
@@ -167,11 +189,6 @@ class HostOwnedConversionTest extends CrewcastSpringTestBase {
                         return m;
                     }
                     return HostOwnedConversionTest.media;
-                }
-
-                @Override
-                public int defaultAudioIndex(ProbedMedia media) {
-                    return 0;
                 }
             };
         }
