@@ -49,6 +49,24 @@
     if (!t) return path;
     return path + (path.indexOf('?') >= 0 ? '&' : '?') + 't=' + encodeURIComponent(t);
   }
+  function clientId(){
+    var k = 'crewcast-client-id';
+    try {
+      var cid = sessionStorage.getItem(k);
+      if (!cid) {
+        cid = 'c-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+        sessionStorage.setItem(k, cid);
+      }
+      return cid;
+    } catch (e) {
+      return '';
+    }
+  }
+  function withClientId(path){
+    var cid = clientId();
+    if (!cid) return path;
+    return path + (path.indexOf('?') >= 0 ? '&' : '?') + 'clientId=' + encodeURIComponent(cid);
+  }
   function fetchOpts(method){
     return { method: method || 'GET', credentials: 'same-origin', cache: 'no-store' };
   }
@@ -124,7 +142,7 @@
     backLink.href = filesHomeHref();
   }
 
-  fetch(withToken('/api/videos/' + encodeURIComponent(id)), fetchOpts())
+  fetch(withClientId(withToken('/api/videos/' + encodeURIComponent(id))), fetchOpts())
     .then(function(r){ if(!r.ok) throw new Error('not found'); return r.json(); })
     .then(function(data){
       document.title = data.title;
@@ -242,12 +260,12 @@
       }
 
       function postPrepare(idx){
-        return fetch(withToken('/api/videos/' + encodeURIComponent(id) + '/audio/prepare?audio=' + idx),
+        return fetch(withClientId(withToken('/api/videos/' + encodeURIComponent(id) + '/audio/prepare?audio=' + idx)),
           fetchOpts('POST')).then(function(r){ return r.json(); });
       }
 
       function pollUntilReady(idx, onReady, onFailed){
-        var statusUrl = withToken('/api/videos/' + encodeURIComponent(id) + '/audio-status?audio=' + idx);
+        var statusUrl = withClientId(withToken('/api/videos/' + encodeURIComponent(id) + '/audio-status?audio=' + idx));
         var stopped = false;
         function tick(){
           if (stopped) return;

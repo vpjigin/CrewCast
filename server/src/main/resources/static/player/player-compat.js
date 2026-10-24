@@ -134,8 +134,29 @@
     return 'About ' + min + ' min left';
   }
 
+  function clientId(){
+    var k = 'crewcast-client-id';
+    try {
+      var id = sessionStorage.getItem(k);
+      if (!id) {
+        id = 'c-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+        sessionStorage.setItem(k, id);
+      }
+      return id;
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function withClientId(path){
+    var id = clientId();
+    if (!id) return path;
+    return path + (path.indexOf('?') >= 0 ? '&' : '?') + 'clientId=' + encodeURIComponent(id);
+  }
+
   function startedByLine(st){
     if (!st || !st.startedBy) return '';
+    if (st.startedBy === 'SELF') return '';
     if (st.startedBy === 'HOST') return 'Started by the host';
     if (st.startedBy === 'VIEWER') return 'Started by another viewer';
     return '';
@@ -203,7 +224,7 @@
   }
 
   function pollCompat(id, audioIdx, withToken, fetchOpts, onTick, onReady, onFail){
-    var statusUrl = withToken('/api/videos/' + encodeURIComponent(id) + '/compat-status?audio=' + audioIdx);
+    var statusUrl = withClientId(withToken('/api/videos/' + encodeURIComponent(id) + '/compat-status?audio=' + audioIdx));
     var stopped = false;
     var timer = null;
     function tick(){
@@ -240,7 +261,7 @@
   }
 
   function postCompatPrepare(id, audioIdx, withToken, fetchOpts){
-    return fetch(withToken('/api/videos/' + encodeURIComponent(id) + '/compat/prepare?audio=' + audioIdx),
+    return fetch(withClientId(withToken('/api/videos/' + encodeURIComponent(id) + '/compat/prepare?audio=' + audioIdx)),
       fetchOpts('POST')).then(function(r){ return r.json(); });
   }
 

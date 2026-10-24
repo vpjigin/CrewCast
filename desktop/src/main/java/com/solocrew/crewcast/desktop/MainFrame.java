@@ -16,6 +16,7 @@ import com.solocrew.crewcast.desktop.ui.StatusDot;
 import com.solocrew.crewcast.desktop.ui.StyledButton;
 import com.solocrew.crewcast.desktop.ui.ToggleSwitch;
 import com.solocrew.crewcast.desktop.ui.UrlField;
+import com.solocrew.crewcast.desktop.ui.PlainTextLabels;
 import com.solocrew.crewcast.desktop.ui.ViewportWidthPanel;
 import com.solocrew.crewcast.net.DownloadFailureDetails;
 import com.solocrew.crewcast.facade.ShareListItem;
@@ -1156,7 +1157,8 @@ public class MainFrame extends JFrame implements SharingUiListener {
                     ElideLabel from = new ElideLabel();
                     from.setFont(Fonts.ui(500, 11f));
                     from.setForeground(CrewcastTheme.MUTED);
-                    from.setFullText("Started from " + item.fileCompatStartedByLabel());
+                    from.setFullText("Started from "
+                            + PlainTextLabels.forUi(item.fileCompatStartedByLabel()));
                     prog.add(from, "span, growx, wrap");
                 }
                 return prog;

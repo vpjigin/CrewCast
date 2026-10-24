@@ -147,6 +147,16 @@ public class CompatFixService {
 
     public AudioFixStatus prepareCompat(Path source, int audioIndex, boolean viewerInitiated, String viewerLabel)
             throws IOException, InterruptedException {
+        return prepareCompat(source, audioIndex, viewerInitiated, viewerLabel, null);
+    }
+
+    public AudioFixStatus prepareCompat(
+            Path source,
+            int audioIndex,
+            boolean viewerInitiated,
+            String viewerLabel,
+            String clientId)
+            throws IOException, InterruptedException {
         if (viewerInitiated && !settingsStore.getSettings().isAllowViewerCompatPrepare()) {
             return failedStatus(source, audioIndex, VIEWER_PREPARE_BLOCKED_MESSAGE);
         }
@@ -167,7 +177,7 @@ public class CompatFixService {
                 return failedStatus(source, audioIndex, ConversionLimits.HOST_BUSY_MESSAGE);
             }
         }
-        enqueue(source, media, audioIndex, viewerInitiated, !viewerInitiated, viewerLabel);
+        enqueue(source, media, audioIndex, viewerInitiated, !viewerInitiated, viewerLabel, clientId);
         notifyProgressThrottled();
         return statusFor(source, audioIndex);
     }
@@ -340,7 +350,7 @@ public class CompatFixService {
         if (existing != null && existing.state != AudioFixJobState.FAILED) {
             return;
         }
-        enqueue(video, audioFixService.probe(video), audio, false, true, null);
+        enqueue(video, audioFixService.probe(video), audio, false, true, null, null);
     }
 
     private void startPeriodicRescan() {
@@ -383,7 +393,9 @@ public class CompatFixService {
         if (Files.isRegularFile(cacheFile(source, audioIndex))) {
             return readyStatus(source, audioIndex);
         }
-        return new AudioFixStatus(AudioFixJobState.NOT_PREPARED, 0, "Not prepared", key);
+        return new AudioFixStatus(
+                AudioFixJobState.NOT_PREPARED, 0, "Not prepared", key,
+                null, null, null, null, null, null);
     }
 
     public AudioFixService.ServeResult resolvePlayback(Path source, int audioIndex) throws IOException, InterruptedException {
@@ -438,6 +450,7 @@ public class CompatFixService {
         return ui == CompatUiState.NEEDED || ui == CompatUiState.FAILED;
     }
 
+    /** Viewer-initiated jobs waiting to start; {@code RUNNING} jobs are not counted toward the cap. */
     private int countViewerQueuedJobs() {
         return (int) jobs.values().stream()
                 .filter(j -> j.state == AudioFixJobState.QUEUED
@@ -452,7 +465,8 @@ public class CompatFixService {
             int audioIndex,
             boolean viewerInitiated,
             boolean hostInitiated,
-            String viewerLabel) throws IOException {
+            String viewerLabel,
+            String clientId) throws IOException {
         String key = jobKey(source, audioIndex);
         jobs.computeIfAbsent(key, k -> new Job(source, audioIndex, media));
         Job job = jobs.get(key);
@@ -464,6 +478,7 @@ public class CompatFixService {
         if (job.startedBy == null) {
             job.startedBy = viewerInitiated ? ConversionStartedBy.VIEWER : ConversionStartedBy.HOST;
             job.startedByLabel = viewerInitiated ? viewerLabel : null;
+            job.startedByClientId = viewerInitiated ? ConversionClientIds.normalize(clientId) : null;
         } else if (viewerInitiated && viewerLabel != null && job.startedBy == ConversionStartedBy.VIEWER) {
             if (job.startedByLabel == null || job.startedByLabel.isBlank()) {
                 job.startedByLabel = viewerLabel;
@@ -633,7 +648,7 @@ public class CompatFixService {
     /** Package tests: enqueue without API guardrails. */
     void testEnqueue(Path source, ProbedMedia media, int audioIndex, boolean viewerInitiated, String viewerLabel)
             throws IOException {
-        enqueue(source, media, audioIndex, viewerInitiated, !viewerInitiated, viewerLabel);
+        enqueue(source, media, audioIndex, viewerInitiated, !viewerInitiated, viewerLabel, null);
     }
 
     int activeJobCount() {
@@ -646,6 +661,13 @@ public class CompatFixService {
 
     void testSetResolvedEncoder(String encoder) {
         resolvedEncoder = encoder;
+    }
+
+    void testSetJobState(Path source, int audioIndex, AudioFixJobState state) throws IOException {
+        Job job = jobs.get(jobKey(source, audioIndex));
+        if (job != null) {
+            job.state = state;
+        }
     }
 
     private void cancelJob(Job job) {
@@ -704,13 +726,13 @@ public class CompatFixService {
     private AudioFixStatus readyStatus(Path source, int audioIndex) throws IOException {
         return new AudioFixStatus(
                 AudioFixJobState.READY, 100, "Ready", jobKey(source, audioIndex),
-                null, null, null, null, null);
+                null, null, null, null, null, null);
     }
 
     private AudioFixStatus failedStatus(Path source, int audioIndex, String msg) throws IOException {
         return new AudioFixStatus(
                 AudioFixJobState.FAILED, 0, msg, jobKey(source, audioIndex),
-                null, null, null, null, null);
+                null, null, null, null, null, null);
     }
 
     private Path cacheFile(Path source, int audioIndex) throws IOException {
@@ -833,6 +855,7 @@ public class CompatFixService {
         volatile long enqueuedAt = System.nanoTime();
         volatile ConversionStartedBy startedBy;
         volatile String startedByLabel;
+        volatile String startedByClientId;
         volatile Double speed;
         volatile Integer etaSeconds;
         volatile double durationSec;
@@ -846,7 +869,16 @@ public class CompatFixService {
 
         AudioFixStatus toStatus(String key, int queueAhead) {
             return new AudioFixStatus(
-                    state, progress, message, key, speed, etaSeconds, startedBy, startedByLabel, queueAhead);
+                    state,
+                    progress,
+                    message,
+                    key,
+                    speed,
+                    etaSeconds,
+                    startedBy,
+                    startedByLabel,
+                    queueAhead,
+                    startedByClientId);
         }
 
         void fail(String msg) {

@@ -9,9 +9,10 @@ public record AudioFixStatus(
         Integer etaSeconds,
         ConversionStartedBy startedBy,
         String startedByLabel,
-        Integer queueAhead) {
+        Integer queueAhead,
+        String startedByClientId) {
 
     public AudioFixStatus(AudioFixJobState status, int progress, String message, String cacheKey) {
-        this(status, progress, message, cacheKey, null, null, null, null, null);
+        this(status, progress, message, cacheKey, null, null, null, null, null, null);
     }
 }

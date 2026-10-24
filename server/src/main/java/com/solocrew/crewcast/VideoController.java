@@ -5,6 +5,7 @@ import com.solocrew.crewcast.facade.SharingService;
 import com.solocrew.crewcast.media.AudioFixService;
 import com.solocrew.crewcast.media.AudioFixStatus;
 import com.solocrew.crewcast.media.CompatFixService;
+import com.solocrew.crewcast.media.ConversionClientIds;
 import com.solocrew.crewcast.media.ConversionProgressDto;
 import com.solocrew.crewcast.viewers.UserAgentParser;
 import com.solocrew.crewcast.viewers.ViewerRegistry;
@@ -81,7 +82,9 @@ public class VideoController {
     @GetMapping("/api/videos/{id}")
     public ResponseEntity<VideoDetails> videoDetails(
             @PathVariable String id,
-            @RequestParam(name = "audio", required = false) Integer audio) throws Exception {
+            @RequestParam(name = "audio", required = false) Integer audio,
+            @RequestParam(name = "clientId", required = false) String clientId) throws Exception {
+        String normalizedClientId = ConversionClientIds.normalize(clientId);
 
         VideoFile video = shareRegistry.findById(id).orElse(null);
         if (video == null) {
@@ -140,14 +143,14 @@ public class VideoController {
                 settingsStore.getSettings().isChapterThumbnails(),
                 tracks,
                 selected,
-                ConversionProgressDto.from(audioStatus),
+                ConversionProgressDto.from(audioStatus, normalizedClientId),
                 media.mainVideoCodec(),
                 warning,
                 subtitles,
                 captionsDefault.name(),
                 compatRecommended,
                 compatFixService.isAvailable(),
-                ConversionProgressDto.from(compatStatus),
+                ConversionProgressDto.from(compatStatus, normalizedClientId),
                 vf,
                 compatState.name(),
                 viewerMayPrepare,
@@ -162,6 +165,7 @@ public class VideoController {
     public ResponseEntity<ConversionProgressDto> compatStatus(
             @PathVariable String id,
             @RequestParam(name = "audio", defaultValue = "0") int audio,
+            @RequestParam(name = "clientId", required = false) String clientId,
             HttpServletRequest request) throws Exception {
         VideoFile video = shareRegistry.findById(id).orElse(null);
         if (video == null) {
@@ -169,14 +173,16 @@ public class VideoController {
         }
         touchViewer(request, video);
         Path path = video.path();
+        String normalizedClientId = ConversionClientIds.normalize(clientId);
         AudioFixStatus st = compatFixService.statusFor(path, audio, true);
-        return ResponseEntity.ok(ConversionProgressDto.from(st));
+        return ResponseEntity.ok(ConversionProgressDto.from(st, normalizedClientId));
     }
 
     @PostMapping("/api/videos/{id}/compat/prepare")
     public ResponseEntity<ConversionProgressDto> prepareCompat(
             @PathVariable String id,
             @RequestParam(name = "audio", defaultValue = "0") int audio,
+            @RequestParam(name = "clientId", required = false) String clientId,
             HttpServletRequest request) throws Exception {
         VideoFile video = shareRegistry.findById(id).orElse(null);
         if (video == null) {
@@ -185,14 +191,16 @@ public class VideoController {
         touchViewer(request, video);
         Path path = video.path();
         String label = viewerLabel(request);
-        AudioFixStatus st = compatFixService.prepareCompat(path, audio, true, label);
-        return ResponseEntity.ok(ConversionProgressDto.from(st));
+        String normalizedClientId = ConversionClientIds.normalize(clientId);
+        AudioFixStatus st = compatFixService.prepareCompat(path, audio, true, label, normalizedClientId);
+        return ResponseEntity.ok(ConversionProgressDto.from(st, normalizedClientId));
     }
 
     @GetMapping("/api/videos/{id}/audio-status")
     public ResponseEntity<ConversionProgressDto> audioStatus(
             @PathVariable String id,
             @RequestParam(name = "audio", defaultValue = "0") int audio,
+            @RequestParam(name = "clientId", required = false) String clientId,
             HttpServletRequest request) throws Exception {
 
         VideoFile video = shareRegistry.findById(id).orElse(null);
@@ -201,14 +209,16 @@ public class VideoController {
         }
         touchViewer(request, video);
         Path path = video.path();
+        String normalizedClientId = ConversionClientIds.normalize(clientId);
         AudioFixStatus st = audioFixService.statusFor(path, audio, true);
-        return ResponseEntity.ok(ConversionProgressDto.from(st));
+        return ResponseEntity.ok(ConversionProgressDto.from(st, normalizedClientId));
     }
 
     @PostMapping("/api/videos/{id}/audio/prepare")
     public ResponseEntity<ConversionProgressDto> prepareAudio(
             @PathVariable String id,
             @RequestParam(name = "audio", defaultValue = "0") int audio,
+            @RequestParam(name = "clientId", required = false) String clientId,
             HttpServletRequest request) throws Exception {
 
         VideoFile video = shareRegistry.findById(id).orElse(null);
@@ -217,8 +227,9 @@ public class VideoController {
         }
         touchViewer(request, video);
         Path path = video.path();
-        AudioFixStatus st = audioFixService.prepareAudio(path, audio, viewerLabel(request));
-        return ResponseEntity.ok(ConversionProgressDto.from(st));
+        String normalizedClientId = ConversionClientIds.normalize(clientId);
+        AudioFixStatus st = audioFixService.prepareAudio(path, audio, viewerLabel(request), normalizedClientId);
+        return ResponseEntity.ok(ConversionProgressDto.from(st, normalizedClientId));
     }
 
     private void touchViewer(HttpServletRequest request, VideoFile video) {

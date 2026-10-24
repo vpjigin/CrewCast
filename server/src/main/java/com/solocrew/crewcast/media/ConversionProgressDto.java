@@ -10,10 +10,9 @@ public record ConversionProgressDto(
         Double speed,
         Integer etaSeconds,
         String startedBy,
-        String startedByLabel,
         Integer queueAhead) {
 
-    public static ConversionProgressDto from(AudioFixStatus st) {
+    public static ConversionProgressDto from(AudioFixStatus st, String requestClientId) {
         if (st == null) {
             return null;
         }
@@ -23,8 +22,7 @@ public record ConversionProgressDto(
                 st.message(),
                 st.speed(),
                 st.etaSeconds(),
-                st.startedBy() != null ? st.startedBy().name() : null,
-                st.startedByLabel(),
+                ConversionPublicStartedBy.forClient(st, requestClientId),
                 st.queueAhead());
     }
 }

@@ -109,7 +109,7 @@ public class AudioFixService {
                     }
                     for (int audio : order) {
                         if (needsTranscode(video, media, audio)) {
-                            enqueueInternal(video, media, audio, false, true, false, null);
+                            enqueueInternal(video, media, audio, false, true, false, null, null);
                         }
                     }
                 } catch (Exception ex) {
@@ -236,7 +236,9 @@ public class AudioFixService {
         if (BrowserPlayback.canServeOriginal(source, media, audioIndex)) {
             return readyStatus(key);
         }
-        return new AudioFixStatus(AudioFixJobState.NOT_PREPARED, 0, "Not prepared", key);
+        return new AudioFixStatus(
+                AudioFixJobState.NOT_PREPARED, 0, "Not prepared", key,
+                null, null, null, null, null, null);
     }
 
     public AudioFixStatus prepareAudio(Path source, int audioIndex) throws IOException, InterruptedException {
@@ -244,6 +246,11 @@ public class AudioFixService {
     }
 
     public AudioFixStatus prepareAudio(Path source, int audioIndex, String viewerLabel)
+            throws IOException, InterruptedException {
+        return prepareAudio(source, audioIndex, viewerLabel, null);
+    }
+
+    public AudioFixStatus prepareAudio(Path source, int audioIndex, String viewerLabel, String clientId)
             throws IOException, InterruptedException {
         if (!isFeatureEnabled()) {
             return statusFor(source, audioIndex);
@@ -263,16 +270,17 @@ public class AudioFixService {
         if (existing == null || existing.state == AudioFixJobState.FAILED) {
             if (countViewerQueuedJobs() >= ConversionLimits.MAX_VIEWER_QUEUED_JOBS) {
                 return new AudioFixStatus(
-                        AudioFixJobState.FAILED, 0, ConversionLimits.HOST_BUSY_MESSAGE, key);
+                        AudioFixJobState.FAILED, 0, ConversionLimits.HOST_BUSY_MESSAGE, key,
+                        null, null, null, null, null, null);
             }
         }
-        enqueueInternal(source, media, audioIndex, true, false, true, viewerLabel);
+        enqueueInternal(source, media, audioIndex, true, false, true, viewerLabel, clientId);
         return statusFor(source, audioIndex);
     }
 
     private AudioFixStatus readyStatus(String key) {
         return new AudioFixStatus(
-                AudioFixJobState.READY, 100, "Ready", key, null, null, null, null, null);
+                AudioFixJobState.READY, 100, "Ready", key, null, null, null, null, null, null);
     }
 
     public String prepareTimeHint(Path source) {
@@ -377,7 +385,9 @@ public class AudioFixService {
         if (Files.isRegularFile(cached)) {
             touch(cached);
             return new ServeResult(Optional.of(cached), false,
-                    new AudioFixStatus(AudioFixJobState.READY, 100, "Ready", jobKey(source, audioIndex)));
+                    new AudioFixStatus(
+                            AudioFixJobState.READY, 100, "Ready", jobKey(source, audioIndex),
+                            null, null, null, null, null, null));
         }
         if (audioIndex < 0 || media.audioByRelativeIndex(audioIndex).isEmpty()) {
             return new ServeResult(Optional.of(source), true, statusFor(source, audioIndex));
@@ -410,9 +420,10 @@ public class AudioFixService {
 
     /** Test hook: same as prepare path enqueue. */
     public void enqueue(Path source, ProbedMedia media, int audioIndex, boolean highPriority) {
-        enqueueInternal(source, media, audioIndex, highPriority, false, true, null);
+        enqueueInternal(source, media, audioIndex, highPriority, false, true, null, null);
     }
 
+    /** Viewer-initiated jobs waiting to start; {@code RUNNING} jobs are not counted toward the cap. */
     private int countViewerQueuedJobs() {
         return (int) jobs.values().stream()
                 .filter(j -> j.state == AudioFixJobState.QUEUED
@@ -440,7 +451,8 @@ public class AudioFixService {
             boolean highPriority,
             boolean hostInitiated,
             boolean viewerInitiated,
-            String viewerLabel) {
+            String viewerLabel,
+            String clientId) {
         if (!ffmpegManager.isAvailable()) {
             return;
         }
@@ -459,6 +471,7 @@ public class AudioFixService {
             if (job.startedBy == null) {
                 job.startedBy = viewerInitiated ? ConversionStartedBy.VIEWER : ConversionStartedBy.HOST;
                 job.startedByLabel = viewerInitiated ? viewerLabel : null;
+                job.startedByClientId = viewerInitiated ? ConversionClientIds.normalize(clientId) : null;
             } else if (viewerInitiated && viewerLabel != null && job.startedBy == ConversionStartedBy.VIEWER) {
                 if (job.startedByLabel == null || job.startedByLabel.isBlank()) {
                     job.startedByLabel = viewerLabel;
@@ -775,6 +788,7 @@ public class AudioFixService {
         volatile long enqueuedAt = System.nanoTime();
         volatile ConversionStartedBy startedBy;
         volatile String startedByLabel;
+        volatile String startedByClientId;
         volatile Double speed;
         volatile Integer etaSeconds;
         volatile double durationSec;
@@ -788,7 +802,16 @@ public class AudioFixService {
 
         AudioFixStatus toStatus(String key, int queueAhead) {
             return new AudioFixStatus(
-                    state, progress, message, key, speed, etaSeconds, startedBy, startedByLabel, queueAhead);
+                    state,
+                    progress,
+                    message,
+                    key,
+                    speed,
+                    etaSeconds,
+                    startedBy,
+                    startedByLabel,
+                    queueAhead,
+                    startedByClientId);
         }
 
         void fail(String msg) {

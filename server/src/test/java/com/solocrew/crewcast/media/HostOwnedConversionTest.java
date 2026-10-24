@@ -76,6 +76,30 @@ class HostOwnedConversionTest extends CrewcastSpringTestBase {
     }
 
     @Test
+    void viewerQueueLimitCountsQueuedOnlyNotRunning() throws Exception {
+        Path base = CrewcastPaths.home();
+        Path running = base.resolve("running.mkv");
+        Files.writeString(running, "r");
+        register(running);
+        compatFixService.testEnqueue(running, media, 0, true, "A");
+        compatFixService.testSetJobState(running, 0, AudioFixJobState.RUNNING);
+        for (int i = 0; i < 3; i++) {
+            Path file = base.resolve("w" + i + ".mkv");
+            Files.writeString(file, "a");
+            register(file);
+            compatFixService.testEnqueue(file, media, 0, true, "Viewer " + i);
+        }
+        assertEquals(3, compatFixService.viewerQueuedCount());
+        Path extra = base.resolve("w4.mkv");
+        Files.writeString(extra, "b");
+        register(extra);
+        compatFixService.testSetResolvedEncoder("libx264");
+        AudioFixStatus st = compatFixService.prepareCompat(extra, 0, true, "Extra");
+        assertEquals(AudioFixJobState.FAILED, st.status());
+        assertEquals(ConversionLimits.HOST_BUSY_MESSAGE, st.message());
+    }
+
+    @Test
     void viewerQueueLimitReturnsBusyMessage() throws Exception {
         Path base = CrewcastPaths.home();
         for (int i = 0; i < 3; i++) {
