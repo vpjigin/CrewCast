@@ -20,6 +20,7 @@ import com.solocrew.crewcast.desktop.ui.ViewportWidthPanel;
 import com.solocrew.crewcast.net.DownloadFailureDetails;
 import com.solocrew.crewcast.facade.ShareListItem;
 import com.solocrew.crewcast.facade.ShareVideoCompatRow;
+import com.solocrew.crewcast.media.CompatFixService;
 import com.solocrew.crewcast.media.CompatUiState;
 import com.solocrew.crewcast.share.ShareRegistry;
 import com.solocrew.crewcast.facade.SharingLinks;
@@ -40,6 +41,7 @@ import javax.swing.JPopupMenu;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JComponent;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.ScrollPaneConstants;
@@ -932,6 +934,13 @@ public class MainFrame extends JFrame implements SharingUiListener {
         for (ShareListItem item : entries) {
             sharesContainer.add(buildShareRow(item), "growx, wmin 0");
         }
+        try {
+            var q = sharingService.conversionQueueSummary();
+            if (q.running() > 0 || q.queued() > 0 || q.needsConversion() > 0) {
+                sharesContainer.add(buildConversionQueueFooter(q), "growx, gaptop 8");
+            }
+        } catch (Exception ignored) {
+        }
         boolean empty = entries.isEmpty();
         CardLayout cards = (CardLayout) listCards.getLayout();
         cards.show(listCards, empty ? "empty" : "list");
@@ -1018,6 +1027,12 @@ public class MainFrame extends JFrame implements SharingUiListener {
 
         boolean videoFile = entry.getKind() == ShareEntry.Kind.FILE
                 && ShareRegistry.isVideoFileName(Path.of(entry.getPath()).getFileName().toString());
+        if (videoFile) {
+            JPanel compatLine = buildCompatDetailLine(item);
+            if (compatLine != null) {
+                text.add(compatLine, "growx, wmin 0, gaptop 4");
+            }
+        }
         JLabel compatIcon = compatStatusIcon(
                 videoFile ? item.fileCompatState() : CompatUiState.NOT_NEEDED,
                 videoFile ? item.fileCompatTooltip() : item.compatSummary());
@@ -1082,6 +1097,109 @@ public class MainFrame extends JFrame implements SharingUiListener {
             }
         }
         return CompatUiState.READY;
+    }
+
+    private JPanel buildCompatDetailLine(ShareListItem item) {
+        CompatUiState state = item.fileCompatState();
+        if (state == CompatUiState.NOT_NEEDED) {
+            return null;
+        }
+        JPanel row = new JPanel(new MigLayout("ins 0, gap 8, fillx", "[grow,fill][pref!]", "[]"));
+        row.setOpaque(false);
+        ElideLabel line = new ElideLabel();
+        line.setFont(Fonts.ui(500, 12f));
+        StyledButton convertBtn = new StyledButton("Convert now");
+        convertBtn.setVariant(StyledButton.Variant.SECONDARY);
+        convertBtn.packToContent();
+        convertBtn.addActionListener(e -> runCompatAction(() -> sharingService.prepareCompatForShareEntry(item.entry())));
+
+        switch (state) {
+            case NEEDED, FAILED -> {
+                if (!sharingService.isCompatEncoderAvailable()) {
+                    line.setForeground(CrewcastTheme.DANGER_TEXT);
+                    line.setFullText(CompatFixService.NO_ENCODER_MESSAGE);
+                    return wrapCompatLine(line);
+                }
+                line.setForeground(new java.awt.Color(0xeab308));
+                line.setFullText("Won't play in most browsers, phones or TVs until converted");
+                row.add(line, "growx, wmin 0");
+                row.add(convertBtn, "aligny center");
+                return row;
+            }
+            case QUEUED -> {
+                line.setForeground(CrewcastTheme.MUTED);
+                int ahead = item.fileCompatQueueAhead();
+                line.setFullText(ahead > 0 ? "Queued – " + ahead + " ahead" : "Queued");
+                return wrapCompatLine(line);
+            }
+            case CONVERTING -> {
+                line.setForeground(CrewcastTheme.TEXT);
+                String eta = item.fileCompatEtaSeconds() != null
+                        ? (Math.max(1, item.fileCompatEtaSeconds() / 60) + " min left")
+                        : "";
+                String speed = item.fileCompatSpeed() != null
+                        ? String.format(java.util.Locale.US, " · %.1f× speed", item.fileCompatSpeed())
+                        : "";
+                line.setFullText("Converting · " + item.fileCompatProgress() + "%"
+                        + (eta.isEmpty() ? "" : " · " + eta) + speed);
+                JPanel prog = new JPanel(new MigLayout("ins 0, gap 8, fillx", "[grow,fill][pref!][pref!]", "[]"));
+                prog.setOpaque(false);
+                prog.add(wrapCompatLine(line), "growx, wmin 0");
+                StyledButton cancel = new StyledButton("Cancel");
+                cancel.setVariant(StyledButton.Variant.GHOST);
+                cancel.packToContent();
+                cancel.addActionListener(e -> runCompatAction(() -> sharingService.cancelCompatForPath(
+                        Path.of(item.entry().getPath()))));
+                prog.add(cancel, "aligny center");
+                if (item.fileCompatStartedBy() == com.solocrew.crewcast.media.ConversionStartedBy.VIEWER
+                        && item.fileCompatStartedByLabel() != null) {
+                    ElideLabel from = new ElideLabel();
+                    from.setFont(Fonts.ui(500, 11f));
+                    from.setForeground(CrewcastTheme.MUTED);
+                    from.setFullText("Started from " + item.fileCompatStartedByLabel());
+                    prog.add(from, "span, growx, wrap");
+                }
+                return prog;
+            }
+            case READY -> {
+                line.setForeground(CrewcastTheme.SUCCESS);
+                line.setFullText("Ready everywhere ✓");
+                return wrapCompatLine(line);
+            }
+            case UNAVAILABLE -> {
+                line.setForeground(CrewcastTheme.DANGER_TEXT);
+                line.setFullText(item.fileCompatTooltip());
+                return wrapCompatLine(line);
+            }
+            default -> {
+                return null;
+            }
+        }
+    }
+
+    private static JPanel wrapCompatLine(JComponent line) {
+        JPanel p = new JPanel(new MigLayout("ins 0, fillx", "[grow,fill]", "[]"));
+        p.setOpaque(false);
+        p.add(line, "growx, wmin 0");
+        return p;
+    }
+
+    private JPanel buildConversionQueueFooter(com.solocrew.crewcast.facade.ConversionQueueSummary q) {
+        JPanel row = new JPanel(new MigLayout("ins 8 12, gap 10, fillx", "[grow,fill][pref!]", "[]"));
+        row.setOpaque(false);
+        ElideLabel label = new ElideLabel();
+        label.setFont(Fonts.ui(500, 12f));
+        label.setForeground(CrewcastTheme.MUTED);
+        label.setFullText("Conversion queue: " + q.running() + " running · " + q.queued() + " waiting");
+        row.add(label, "growx, wmin 0");
+        if (q.needsConversion() > 0) {
+            StyledButton all = new StyledButton("Convert all (" + q.needsConversion() + ")");
+            all.setVariant(StyledButton.Variant.SECONDARY);
+            all.packToContent();
+            all.addActionListener(e -> runCompatAction(() -> sharingService.prepareAllNeedingCompat()));
+            row.add(all, "aligny center");
+        }
+        return row;
     }
 
     private JLabel compatStatusIcon(CompatUiState state, String tooltip) {
@@ -1449,7 +1567,11 @@ public class MainFrame extends JFrame implements SharingUiListener {
         device.setForeground(CrewcastTheme.TEXT);
         String via = v.viaTunnel() ? "via tunnel" : "on Wi‑Fi";
         ElideLabel sub = new ElideLabel();
-        sub.setFullText(v.fileName() + " · " + via);
+        if (v.waitingProgress() != null) {
+            sub.setFullText("Waiting for " + v.fileName() + " · " + v.waitingProgress() + "% · " + via);
+        } else {
+            sub.setFullText(v.fileName() + " · " + via);
+        }
         sub.setFont(Fonts.ui(500, 12));
         sub.setForeground(CrewcastTheme.MUTED);
         JPanel text = new JPanel(new MigLayout("ins 0, gap 0", "[grow,fill]", "[]1[]"));
