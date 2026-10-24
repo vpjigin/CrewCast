@@ -775,6 +775,17 @@ public class AudioFixService {
         ConversionPartFiles.deleteStaleAudioParts(CrewcastPaths.cacheDir());
     }
 
+    /** Tests: wait until the worker queue is drained (bounded). */
+    public void awaitWorkerIdle(long timeout, TimeUnit unit) throws InterruptedException {
+        try {
+            worker.submit(() -> {}).get(timeout, unit);
+        } catch (java.util.concurrent.ExecutionException ex) {
+            throw new IllegalStateException("audio worker failed while idling", ex.getCause());
+        } catch (java.util.concurrent.TimeoutException ex) {
+            throw new IllegalStateException("audio worker did not idle within " + timeout + " " + unit, ex);
+        }
+    }
+
     public void cancelAllJobs(boolean wait) {
         Process p = runningProcess;
         if (p != null) {
