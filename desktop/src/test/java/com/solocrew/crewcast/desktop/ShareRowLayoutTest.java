@@ -1,5 +1,8 @@
 package com.solocrew.crewcast.desktop;
 
+import com.solocrew.crewcast.desktop.share.ShareListUiMode;
+import com.solocrew.crewcast.desktop.share.ShareRowFactory;
+import com.solocrew.crewcast.desktop.share.ShareRowTestSupport;
 import com.solocrew.crewcast.facade.ShareListItem;
 import com.solocrew.crewcast.media.CompatUiState;
 import com.solocrew.crewcast.media.ConversionStartedBy;
@@ -17,13 +20,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ShareRowLayoutTest {
 
-    private MainFrame frame;
+    private ShareRowFactory factory;
 
     @BeforeEach
     void setUp() {
-        frame = new MainFrame();
-        frame.testSetSharingService(null);
-        frame.testSetUiCompatStub(true, 12);
+        factory = ShareRowTestSupport.layoutTestFactory();
     }
 
     @Test
@@ -39,7 +40,7 @@ class ShareRowLayoutTest {
     }
 
     private void layoutAt400(ShareListItem item) {
-        JPanel row = frame.testBuildShareRowMain(item);
+        JPanel row = factory.buildShareRowMain(item, ShareListUiMode.NORMAL);
         JPanel host = new JPanel(new BorderLayout());
         host.add(row, BorderLayout.NORTH);
         host.setSize(new Dimension(400, 900));

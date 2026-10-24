@@ -1,5 +1,7 @@
 package com.solocrew.crewcast.desktop;
 
+import com.solocrew.crewcast.desktop.share.ShareListController;
+import com.solocrew.crewcast.desktop.share.ShareListUiMode;
 import com.solocrew.crewcast.facade.ConversionQueueSummary;
 import com.solocrew.crewcast.facade.ShareListItem;
 import com.solocrew.crewcast.media.CompatUiState;
@@ -11,34 +13,31 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ConvertNowShareListTest {
 
-    private MainFrame frame;
+    private ShareListController controller;
 
     @BeforeEach
     void setUp() {
-        frame = new MainFrame();
-        frame.testSetSharingService(null);
-        frame.testSetUiCompatStub(true, 12);
-        frame.testSetConversionQueueSummary(new ConversionQueueSummary(1, 0, 0));
-        frame.testSeedCachedShareList(List.of(neededItem()));
+        controller = new ShareListController();
+        controller.setQueueSummaryOverride(new ConversionQueueSummary(1, 0, 0));
+        controller.apply(List.of(neededItem()), ShareListUiMode.NORMAL);
     }
 
     @Test
     void convertNowLeavesCheckingAndShowsConvertingImmediately() {
-        frame.testSimulateConvertNow(neededItem());
-        assertFalse(frame.testLastApplyUsedChecking, "Convert now must not show skeleton Checking…");
-        assertEquals(CompatUiState.CONVERTING, frame.testFirstItemCompatState());
+        controller.simulateConvertNow(neededItem());
+        assertFalse(controller.lastApplyUsedChecking(), "Convert now must not show skeleton Checking…");
+        assertEquals(CompatUiState.CONVERTING, controller.firstItemCompatState());
     }
 
     @Test
     void convertNowWhenQueuedShowsQueuedNotChecking() {
-        frame.testSetConversionQueueSummary(new ConversionQueueSummary(0, 1, 0));
-        frame.testSimulateConvertNow(neededItem());
-        assertFalse(frame.testLastApplyUsedChecking);
-        assertEquals(CompatUiState.QUEUED, frame.testFirstItemCompatState());
+        controller.setQueueSummaryOverride(new ConversionQueueSummary(0, 1, 0));
+        controller.simulateConvertNow(neededItem());
+        assertFalse(controller.lastApplyUsedChecking());
+        assertEquals(CompatUiState.QUEUED, controller.firstItemCompatState());
     }
 
     private static ShareListItem neededItem() {

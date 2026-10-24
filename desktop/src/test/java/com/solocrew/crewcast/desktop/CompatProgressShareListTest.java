@@ -1,5 +1,7 @@
 package com.solocrew.crewcast.desktop;
 
+import com.solocrew.crewcast.desktop.share.ShareListController;
+import com.solocrew.crewcast.desktop.share.ShareListUiMode;
 import com.solocrew.crewcast.facade.ShareListItem;
 import com.solocrew.crewcast.media.CompatUiState;
 import com.solocrew.crewcast.settings.ShareEntry;
@@ -11,44 +13,43 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-/** Desktop row model updates when compat refresh lists are applied (simulates {@code refreshCompatFieldsOnItems}). */
+/** Share list row model updates when compat refresh lists are applied (simulates {@code refreshCompatFieldsOnItems}). */
 class CompatProgressShareListTest {
 
-    private MainFrame frame;
+    private ShareListController controller;
     private ShareListItem base;
 
     @BeforeEach
     void setUp() {
-        frame = new MainFrame();
-        frame.testSetSharingService(null);
+        controller = new ShareListController();
         base = neededItem();
-        frame.testSeedCachedShareList(List.of(base));
+        controller.apply(List.of(base), ShareListUiMode.NORMAL);
     }
 
     @Test
     void rowModelQueuedRunningReady() {
-        frame.testApplyCompatRefresh(List.of(withState(base, CompatUiState.QUEUED, 0, null, null)));
-        assertEquals(CompatUiState.QUEUED, frame.testFirstItemCompatState());
+        controller.apply(List.of(withState(base, CompatUiState.QUEUED, 0, null, null)), ShareListUiMode.NORMAL);
+        assertEquals(CompatUiState.QUEUED, controller.firstItemCompatState());
 
-        frame.testApplyCompatRefresh(List.of(withState(base, CompatUiState.CONVERTING, 37, null, null)));
-        assertEquals(CompatUiState.CONVERTING, frame.testFirstItemCompatState());
-        assertEquals(37, frame.testFirstItemCompatProgress());
+        controller.apply(List.of(withState(base, CompatUiState.CONVERTING, 37, null, null)), ShareListUiMode.NORMAL);
+        assertEquals(CompatUiState.CONVERTING, controller.firstItemCompatState());
+        assertEquals(37, controller.firstItemCompatProgress());
 
-        frame.testApplyCompatRefresh(List.of(withState(base, CompatUiState.READY, 100, null, null)));
-        assertEquals(CompatUiState.READY, frame.testFirstItemCompatState());
+        controller.apply(List.of(withState(base, CompatUiState.READY, 100, null, null)), ShareListUiMode.NORMAL);
+        assertEquals(CompatUiState.READY, controller.firstItemCompatState());
     }
 
     @Test
     void progressListenerStepsUpdateRowModelWithEta() {
-        frame.testApplyCompatRefresh(List.of(withState(base, CompatUiState.CONVERTING, 10, 600, 1.2)));
-        assertEquals(10, frame.testFirstItemCompatProgress());
-        assertEquals(600, frame.testFirstItemCompatEtaSeconds());
-        assertNotNull(frame.testFirstItemCompatSpeed());
+        controller.apply(List.of(withState(base, CompatUiState.CONVERTING, 10, 600, 1.2)), ShareListUiMode.NORMAL);
+        assertEquals(10, controller.firstItemCompatProgress());
+        assertEquals(600, controller.firstItemCompatEtaSeconds());
+        assertNotNull(controller.firstItemCompatSpeed());
 
-        frame.testApplyCompatRefresh(List.of(withState(base, CompatUiState.CONVERTING, 50, 240, 2.0)));
-        assertEquals(50, frame.testFirstItemCompatProgress());
-        assertEquals(240, frame.testFirstItemCompatEtaSeconds());
-        assertEquals(2.0, frame.testFirstItemCompatSpeed());
+        controller.apply(List.of(withState(base, CompatUiState.CONVERTING, 50, 240, 2.0)), ShareListUiMode.NORMAL);
+        assertEquals(50, controller.firstItemCompatProgress());
+        assertEquals(240, controller.firstItemCompatEtaSeconds());
+        assertEquals(2.0, controller.firstItemCompatSpeed());
     }
 
     private static ShareListItem neededItem() {
