@@ -11,7 +11,8 @@ import java.util.Optional;
 
 /**
  * Test-side ffmpeg/ffprobe lookup aligned with {@link FfmpegManager} (system property,
- * {@code crewcast.home}/bin, then PATH unless {@code crewcast.ffmpeg.skipSystemSearch}).
+ * {@code crewcast.home}/bin, then PATH unless {@code crewcast.ffmpeg.disable-discovery} or
+ * {@code crewcast.ffmpeg.skipSystemSearch}). E2e guards use real PATH lookup (ignore disable-discovery).
  */
 public final class FfmpegTestSupport {
 
@@ -20,14 +21,14 @@ public final class FfmpegTestSupport {
     private FfmpegTestSupport() {}
 
     public static boolean ffmpegAndFfprobeAvailable() {
-        Optional<Path> ffmpeg = locate("ffmpeg").filter(FfmpegManager::commandWorks);
-        Optional<Path> ffprobe = locate("ffprobe").filter(FfmpegManager::commandWorks);
+        Optional<Path> ffmpeg = locate("ffmpeg", false).filter(FfmpegManager::commandWorks);
+        Optional<Path> ffprobe = locate("ffprobe", false).filter(FfmpegManager::commandWorks);
         return ffmpeg.isPresent() && ffprobe.isPresent();
     }
 
     /** Resolved ffmpeg binary for tests (same search order as {@link FfmpegManager}). */
     public static Optional<Path> ffmpegPath() {
-        return locate("ffmpeg").filter(FfmpegManager::commandWorks);
+        return locate("ffmpeg", false).filter(FfmpegManager::commandWorks);
     }
 
     public static boolean ffmpegDownloadE2eEnabled() {
@@ -42,14 +43,14 @@ public final class FfmpegTestSupport {
         return ffmpegAndFfprobeAvailable();
     }
 
-    private static Optional<Path> locate(String binary) {
+    private static Optional<Path> locate(String binary, boolean honorDisableDiscovery) {
         List<Path> candidates = new ArrayList<>();
         String propPath = System.getProperty("crewcast.ffmpeg.path");
         if (propPath != null && !propPath.isBlank()) {
             candidates.add(resolveSibling(propPath, binary));
         }
         candidates.add(CrewcastPaths.binDir().resolve(binaryName(binary)));
-        if (!skipSystemSearch()) {
+        if (!skipSystemSearch(honorDisableDiscovery)) {
             candidates.add(Path.of("/opt/homebrew/bin", binaryName(binary)));
             candidates.add(Path.of("/usr/local/bin", binaryName(binary)));
             String pathEnv = System.getenv("PATH");
@@ -90,7 +91,11 @@ public final class FfmpegTestSupport {
         return binary;
     }
 
-    private static boolean skipSystemSearch() {
+    private static boolean skipSystemSearch(boolean honorDisableDiscovery) {
+        if (honorDisableDiscovery
+                && Boolean.parseBoolean(System.getProperty("crewcast.ffmpeg.disable-discovery", "false"))) {
+            return true;
+        }
         return Boolean.parseBoolean(System.getProperty("crewcast.ffmpeg.skipSystemSearch", "false"))
                 || Boolean.parseBoolean(System.getProperty("crewcast.ffmpeg.forceDownload", "false"));
     }

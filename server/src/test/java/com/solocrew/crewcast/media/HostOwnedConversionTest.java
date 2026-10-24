@@ -13,9 +13,6 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -33,12 +30,6 @@ class HostOwnedConversionTest extends CrewcastSpringTestBase {
 
     static final Map<Path, ProbedMedia> PROBES = new ConcurrentHashMap<>();
     static ProbedMedia media;
-
-    @DynamicPropertySource
-    static void home(DynamicPropertyRegistry registry) throws Exception {
-        Path home = Files.createTempDirectory("crewcast-host-owned-");
-        registry.add("crewcast.home", () -> home.toString());
-    }
 
     @Autowired
     CompatFixService compatFixService;
