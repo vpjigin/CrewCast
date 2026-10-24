@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Crewcast phone popup</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0E1014}
+button{font-family:inherit}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; box-sizing: border-box; overflow: hidden; background: #0E1014; color: #E8EAF0; font-family: 'DM Sans', system-ui, sans-serif;">
+
+  <div style="display: flex; align-items: center; gap: 10px; padding: 16px; border-bottom: 1px solid #232833;">
+    <div style="width: 32px; height: 32px; border-radius: 9px; background: #4FD1C5; display: flex; align-items: center; justify-content: center;">
+      <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l13-7.5z" fill="#06201D"></path></svg>
+    </div>
+    <div style="font-size: 17px; font-weight: 700;">Crewcast</div>
+  </div>
+
+  <div style="padding: 20px 16px; display: flex; flex-direction: column; gap: 16px;">
+    <div>
+      <div style="font-size: 12px; color: #9AA3B2; font-family: 'JetBrains Mono', monospace;">Shared folder</div>
+      <h1 style="margin: 4px 0 0; font-size: 26px; font-weight: 700; letter-spacing: -0.02em;">Weekend Trip</h1>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;">
+      <div style="background: #161920; border: 1px solid #262B36; border-radius: 12px; overflow: hidden;">
+        <div style="height: 96px; background: linear-gradient(135deg,#2B3A67,#6A4C93);"></div>
+        <div style="padding: 10px 12px 12px; font-size: 14px; font-weight: 600; overflow-wrap: anywhere;">Weekend.Trip.2026.mkv</div>
+      </div>
+      <div style="background: #161920; border: 1px solid #262B36; border-radius: 12px; overflow: hidden;">
+        <div style="height: 96px; background: linear-gradient(160deg,#F2994A,#BB4E75 55%,#2D2A55);"></div>
+        <div style="padding: 10px 12px 12px; font-size: 14px; font-weight: 600; overflow-wrap: anywhere;">Goa-sunset.jpg</div>
+      </div>
+      <div style="background: #161920; border: 1px solid #262B36; border-radius: 12px; overflow: hidden;">
+        <div style="height: 96px; background: #1E222B; display: flex; align-items: center; justify-content: center; font-family: 'JetBrains Mono', monospace; font-size: 20px; color: #9AA3B2;">PDF</div>
+        <div style="padding: 10px 12px 12px; font-size: 14px; font-weight: 600; overflow-wrap: anywhere;">Trip-itinerary.pdf</div>
+      </div>
+      <div style="background: #161920; border: 1px solid #262B36; border-radius: 12px; overflow: hidden;">
+        <div style="height: 96px; background: #1E222B; display: flex; align-items: center; justify-content: center; font-family: 'JetBrains Mono', monospace; font-size: 20px; color: #9AA3B2;">ZIP</div>
+        <div style="padding: 10px 12px 12px; font-size: 14px; font-weight: 600; overflow-wrap: anywhere;">Photos-backup.zip</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; background: rgba(5,6,8,0.76);"></div>
+
+  <div role="dialog" aria-modal="true" aria-label="Weekend.Trip.2026.mkv" style="position: absolute; left: 0; bottom: 0; width: 100%; box-sizing: border-box; background: #161920; border-top: 1px solid #2A2F3A; border-radius: 20px 20px 0 0; padding: 12px 16px 28px; display: flex; flex-direction: column; gap: 16px;">
+    <div style="align-self: center; width: 40px; height: 4px; border-radius: 2px; background: #3A4150;"></div>
+    <div style="display: flex; align-items: flex-start; gap: 8px;">
+      <div style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;">
+        <div style="font-size: 16px; font-weight: 600; overflow-wrap: anywhere;">Weekend.Trip.2026.mkv</div>
+        <div style="font-size: 13px; color: #9AA3B2;">Video · 1.8 GB · Today, 4:12 PM</div>
+      </div>
+      <button aria-label="Close" style="width: 44px; height: 44px; flex-shrink: 0; margin: -8px -8px 0 0; display: flex; align-items: center; justify-content: center; background: transparent; border: 0; color: #E8EAF0;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+      </button>
+    </div>
+    <div style="position: relative; width: 100%; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg,#2B3A67,#6A4C93);">
+      <div style="width: 56px; height: 56px; border-radius: 50%; background: rgba(8,10,14,0.55); display: flex; align-items: center; justify-content: center;">
+        <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="#FFFFFF"></path></svg>
+      </div>
+    </div>
+    <div style="display: flex; gap: 12px;">
+      <button style="flex: 1; min-height: 48px; display: flex; align-items: center; justify-content: center; gap: 8px; background: transparent; border: 1px solid #3A4150; border-radius: 10px; color: #E8EAF0; font-size: 15px; font-weight: 600;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+        View
+      </button>
+      <button style="flex: 1; min-height: 48px; display: flex; align-items: center; justify-content: center; gap: 8px; background: #4FD1C5; border: 0; border-radius: 10px; color: #06201D; font-size: 15px; font-weight: 700;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"></path></svg>
+        Download
+      </button>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

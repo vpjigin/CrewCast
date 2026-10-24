@@ -27,7 +27,6 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -36,8 +35,6 @@ public class AudioFixService {
 
     private static final Logger log = LoggerFactory.getLogger(AudioFixService.class);
     private static final long MIN_FREE_BYTES = 512L * 1024 * 1024;
-    private static final long DEFAULT_IDLE_CANCEL_MS = 120_000L;
-
     private final FfmpegManager ffmpegManager;
     private final SettingsStore settingsStore;
     private final ShareRegistry shareRegistry;
@@ -48,40 +45,28 @@ public class AudioFixService {
         t.setDaemon(true);
         return t;
     });
-    private final ScheduledExecutorService idleWatchdog = Executors.newSingleThreadScheduledExecutor(r -> {
-        Thread t = new Thread(r, "audio-fix-idle-watch");
-        t.setDaemon(true);
-        return t;
-    });
     private final AtomicBoolean workerStarted = new AtomicBoolean(false);
 
     private volatile Process runningProcess;
     private volatile String runningCacheKey;
     private volatile double remuxBytesPerSecond;
 
-    private final long idleCancelMs;
-
     public AudioFixService(FfmpegManager ffmpegManager, SettingsStore settingsStore, ShareRegistry shareRegistry) {
         this.ffmpegManager = ffmpegManager;
         this.settingsStore = settingsStore;
         this.shareRegistry = shareRegistry;
-        this.idleCancelMs = Long.parseLong(System.getProperty(
-                "crewcast.audio.idle-cancel-ms",
-                Long.toString(DEFAULT_IDLE_CANCEL_MS)));
     }
 
     @jakarta.annotation.PostConstruct
     void startup() throws IOException {
         CrewcastWriteGuard.check(CrewcastPaths.cacheDir());
         Files.createDirectories(CrewcastPaths.cacheDir());
-        deleteStalePartFiles();
+        ConversionPartFiles.deleteStaleAudioParts(CrewcastPaths.cacheDir());
         startWorkerIfNeeded();
-        idleWatchdog.scheduleWithFixedDelay(this::cancelIdleViewerJobs, 15, 15, TimeUnit.SECONDS);
     }
 
     @PreDestroy
     void shutdown() {
-        idleWatchdog.shutdownNow();
         cancelAllJobs(true);
         worker.shutdownNow();
     }
@@ -124,7 +109,7 @@ public class AudioFixService {
                     }
                     for (int audio : order) {
                         if (needsTranscode(video, media, audio)) {
-                            enqueueInternal(video, media, audio, false, true, false);
+                            enqueueInternal(video, media, audio, false, true, false, null, null);
                         }
                     }
                 } catch (Exception ex) {
@@ -157,7 +142,7 @@ public class AudioFixService {
     }
 
     public void onSharingStopped() {
-        cancelAllJobs(true);
+        cancelViewerJobs(true);
     }
 
     public void onShareRemoved(Path shareRoot) {
@@ -226,53 +211,76 @@ public class AudioFixService {
         return statusFor(source, audioIndex, false);
     }
 
-    public AudioFixStatus statusFor(Path source, int audioIndex, boolean recordPoll) throws IOException, InterruptedException {
+    public AudioFixStatus statusFor(Path source, int audioIndex, boolean unusedRecordPoll)
+            throws IOException, InterruptedException {
         String key = jobKey(source, audioIndex);
-        if (recordPoll) {
-            touchPoll(source, audioIndex);
-        }
         MutableJob job = jobs.get(key);
         if (job != null && job.state != AudioFixJobState.FAILED) {
             if (job.state == AudioFixJobState.READY || Files.isRegularFile(cacheFile(source, audioIndex))) {
-                return new AudioFixStatus(AudioFixJobState.READY, 100, "Ready", key);
+                return readyStatus(key);
             }
-            return job.toStatus(key);
+            return job.toStatus(key, queueAheadFor(source, audioIndex));
         }
         Path cached = cacheFile(source, audioIndex);
         if (Files.isRegularFile(cached)) {
             touch(cached);
-            return new AudioFixStatus(AudioFixJobState.READY, 100, "Ready", key);
+            return readyStatus(key);
         }
         if (!isFeatureEnabled()) {
-            return new AudioFixStatus(AudioFixJobState.READY, 100, "Ready", key);
+            return readyStatus(key);
         }
         ProbedMedia media = probe(source);
         if (media.audioTracks().isEmpty()) {
-            return new AudioFixStatus(AudioFixJobState.READY, 100, "Ready", key);
+            return readyStatus(key);
         }
         if (BrowserPlayback.canServeOriginal(source, media, audioIndex)) {
-            return new AudioFixStatus(AudioFixJobState.READY, 100, "Ready", key);
+            return readyStatus(key);
         }
-        return new AudioFixStatus(AudioFixJobState.NOT_PREPARED, 0, "Not prepared", key);
+        return new AudioFixStatus(
+                AudioFixJobState.NOT_PREPARED, 0, "Not prepared", key,
+                null, null, null, null, null, null);
     }
 
     public AudioFixStatus prepareAudio(Path source, int audioIndex) throws IOException, InterruptedException {
+        return prepareAudio(source, audioIndex, null);
+    }
+
+    public AudioFixStatus prepareAudio(Path source, int audioIndex, String viewerLabel)
+            throws IOException, InterruptedException {
+        return prepareAudio(source, audioIndex, viewerLabel, null);
+    }
+
+    public AudioFixStatus prepareAudio(Path source, int audioIndex, String viewerLabel, String clientId)
+            throws IOException, InterruptedException {
         if (!isFeatureEnabled()) {
             return statusFor(source, audioIndex);
         }
         ProbedMedia media = probe(source);
+        String key = jobKey(source, audioIndex);
         if (media.audioTracks().isEmpty()) {
-            return new AudioFixStatus(AudioFixJobState.READY, 100, "Ready", jobKey(source, audioIndex));
+            return readyStatus(key);
         }
         if (BrowserPlayback.canServeOriginal(source, media, audioIndex)) {
-            return new AudioFixStatus(AudioFixJobState.READY, 100, "Ready", jobKey(source, audioIndex));
+            return readyStatus(key);
         }
         if (Files.isRegularFile(cacheFile(source, audioIndex))) {
-            return new AudioFixStatus(AudioFixJobState.READY, 100, "Ready", jobKey(source, audioIndex));
+            return readyStatus(key);
         }
-        enqueueInternal(source, media, audioIndex, true, false, true);
-        touchPoll(source, audioIndex);
+        MutableJob existing = jobs.get(key);
+        if (existing == null || existing.state == AudioFixJobState.FAILED) {
+            if (countViewerQueuedJobs() >= ConversionLimits.MAX_VIEWER_QUEUED_JOBS) {
+                return new AudioFixStatus(
+                        AudioFixJobState.FAILED, 0, ConversionLimits.HOST_BUSY_MESSAGE, key,
+                        null, null, null, null, null, null);
+            }
+        }
+        enqueueInternal(source, media, audioIndex, true, false, true, viewerLabel, clientId);
         return statusFor(source, audioIndex);
+    }
+
+    private AudioFixStatus readyStatus(String key) {
+        return new AudioFixStatus(
+                AudioFixJobState.READY, 100, "Ready", key, null, null, null, null, null, null);
     }
 
     public String prepareTimeHint(Path source) {
@@ -377,7 +385,9 @@ public class AudioFixService {
         if (Files.isRegularFile(cached)) {
             touch(cached);
             return new ServeResult(Optional.of(cached), false,
-                    new AudioFixStatus(AudioFixJobState.READY, 100, "Ready", jobKey(source, audioIndex)));
+                    new AudioFixStatus(
+                            AudioFixJobState.READY, 100, "Ready", jobKey(source, audioIndex),
+                            null, null, null, null, null, null));
         }
         if (audioIndex < 0 || media.audioByRelativeIndex(audioIndex).isEmpty()) {
             return new ServeResult(Optional.of(source), true, statusFor(source, audioIndex));
@@ -392,6 +402,40 @@ public class AudioFixService {
             return 0;
         }
         return AudioTrackSelector.selectAudioIndex(media, null, pref);
+    }
+
+    /**
+     * Canonical relative audio index for playback, compat jobs, and cache keys.
+     * {@code audioQuery == null} means the app default track ({@link #defaultAudioIndex}).
+     * Invalid explicit indices fall back to the default (internal callers only).
+     */
+    public int resolveAudioIndex(ProbedMedia media, Integer audioQuery) {
+        if (audioQuery != null && media.audioByRelativeIndex(audioQuery).isPresent()) {
+            return audioQuery;
+        }
+        if (audioQuery != null && media.audioTracks().isEmpty() && audioQuery == 0) {
+            return 0;
+        }
+        return defaultAudioIndex(media);
+    }
+
+    /**
+     * Like {@link #resolveAudioIndex} but rejects unknown explicit track indices (HTTP API).
+     */
+    public int resolveAudioIndexStrict(ProbedMedia media, Integer audioQuery) {
+        if (audioQuery == null) {
+            return defaultAudioIndex(media);
+        }
+        if (media.audioTracks().isEmpty()) {
+            if (audioQuery == 0) {
+                return 0;
+            }
+            throw new InvalidAudioTrackException(audioQuery);
+        }
+        if (media.audioByRelativeIndex(audioQuery).isEmpty()) {
+            throw new InvalidAudioTrackException(audioQuery);
+        }
+        return audioQuery;
     }
 
     public boolean needsTranscode(Path source, ProbedMedia media, int audioIndex) {
@@ -410,11 +454,39 @@ public class AudioFixService {
 
     /** Test hook: same as prepare path enqueue. */
     public void enqueue(Path source, ProbedMedia media, int audioIndex, boolean highPriority) {
-        enqueueInternal(source, media, audioIndex, highPriority, false, true);
+        enqueueInternal(source, media, audioIndex, highPriority, false, true, null, null);
     }
 
-    private void enqueueInternal(Path source, ProbedMedia media, int audioIndex, boolean highPriority,
-                                 boolean exemptFromIdleCancel, boolean viewerInitiated) {
+    /** Viewer-initiated jobs waiting to start; {@code RUNNING} jobs are not counted toward the cap. */
+    private int countViewerQueuedJobs() {
+        return (int) jobs.values().stream()
+                .filter(j -> j.state == AudioFixJobState.QUEUED
+                        && j.startedBy == ConversionStartedBy.VIEWER
+                        && !j.hostInitiated)
+                .count();
+    }
+
+    public int queueAheadFor(Path source, int audioIndex) throws IOException {
+        String key = jobKey(source, audioIndex);
+        MutableJob job = jobs.get(key);
+        if (job == null || job.state != AudioFixJobState.QUEUED) {
+            return 0;
+        }
+        long mine = job.enqueuedAt;
+        return (int) jobs.values().stream()
+                .filter(j -> j.state == AudioFixJobState.QUEUED && j.enqueuedAt < mine)
+                .count();
+    }
+
+    private void enqueueInternal(
+            Path source,
+            ProbedMedia media,
+            int audioIndex,
+            boolean highPriority,
+            boolean hostInitiated,
+            boolean viewerInitiated,
+            String viewerLabel,
+            String clientId) {
         if (!ffmpegManager.isAvailable()) {
             return;
         }
@@ -430,14 +502,20 @@ public class AudioFixService {
             if (job.state == AudioFixJobState.READY) {
                 return;
             }
-            job.exemptFromIdleCancel = job.exemptFromIdleCancel || exemptFromIdleCancel;
+            if (job.startedBy == null) {
+                job.startedBy = viewerInitiated ? ConversionStartedBy.VIEWER : ConversionStartedBy.HOST;
+                job.startedByLabel = viewerInitiated ? viewerLabel : null;
+                job.startedByClientId = viewerInitiated ? ConversionClientIds.normalize(clientId) : null;
+            } else if (viewerInitiated && viewerLabel != null && job.startedBy == ConversionStartedBy.VIEWER) {
+                if (job.startedByLabel == null || job.startedByLabel.isBlank()) {
+                    job.startedByLabel = viewerLabel;
+                }
+            }
+            job.hostInitiated = job.hostInitiated || hostInitiated;
             job.viewerInitiated = job.viewerInitiated || viewerInitiated;
             if (job.state == AudioFixJobState.RUNNING) {
                 if (highPriority) {
                     job.highPriority = true;
-                }
-                if (viewerInitiated) {
-                    job.lastStatusPollMs = System.currentTimeMillis();
                 }
                 return;
             }
@@ -448,37 +526,10 @@ public class AudioFixService {
             job.state = AudioFixJobState.QUEUED;
             job.message = "Queued";
             job.enqueuedAt = System.nanoTime();
-            if (viewerInitiated) {
-                job.lastStatusPollMs = System.currentTimeMillis();
-            }
             startWorkerIfNeeded();
             worker.submit(this::drainQueue);
         } catch (IOException ex) {
             log.warn("Enqueue failed: {}", ex.getMessage());
-        }
-    }
-
-    private void touchPoll(Path source, int audioIndex) throws IOException {
-        String key = jobKey(source, audioIndex);
-        MutableJob job = jobs.get(key);
-        if (job != null) {
-            job.lastStatusPollMs = System.currentTimeMillis();
-        }
-    }
-
-    private void cancelIdleViewerJobs() {
-        long now = System.currentTimeMillis();
-        for (MutableJob job : jobs.values()) {
-            if (job.exemptFromIdleCancel) {
-                continue;
-            }
-            if (job.state != AudioFixJobState.RUNNING || !job.viewerInitiated) {
-                continue;
-            }
-            if (now - job.lastStatusPollMs > idleCancelMs) {
-                log.info("Crewcast audio idle cancel (no status poll for {} ms)", idleCancelMs);
-                cancelJob(job);
-            }
         }
     }
 
@@ -488,19 +539,22 @@ public class AudioFixService {
             key = jobKey(job.source, job.audioIndex);
         } catch (IOException ignored) {
         }
-        if (key != null && key.equals(runningCacheKey)) {
-            Process p = runningProcess;
-            if (p != null) {
-                p.destroyForcibly();
+        boolean running = key != null && key.equals(runningCacheKey);
+        Process p = running ? runningProcess : null;
+        if (p != null) {
+            p.destroyForcibly();
+        }
+        jobs.entrySet().removeIf(e -> e.getValue() == job);
+        if (p != null) {
+            try {
+                p.waitFor(5, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             }
         }
-        job.state = AudioFixJobState.NOT_PREPARED;
-        job.progress = 0;
-        job.message = "Cancelled (viewer left)";
-        jobs.entrySet().removeIf(e -> e.getValue() == job);
         try {
             Path out = cacheFile(job.source, job.audioIndex);
-            Files.deleteIfExists(Path.of(out.getParent().toString(), out.getFileName().toString() + ".part"));
+            ConversionPartFiles.deleteIfExists(out);
         } catch (IOException ignored) {
         }
     }
@@ -555,7 +609,8 @@ public class AudioFixService {
             job.fail(e.getMessage());
             return;
         }
-        Path part = Path.of(out.getParent().toString(), out.getFileName().toString() + ".part");
+        Path part = ConversionPartFiles.partPath(out);
+        job.outputPath = out;
         long started = System.currentTimeMillis();
         try {
             if (!ensureDiskSpace()) {
@@ -566,8 +621,10 @@ public class AudioFixService {
             job.state = AudioFixJobState.RUNNING;
             job.progress = 0;
             job.message = "Starting ffmpeg";
-            job.lastStatusPollMs = System.currentTimeMillis();
+            job.speed = null;
+            job.etaSeconds = null;
             double durationSec = probeDuration(job.source);
+            job.durationSec = durationSec;
             List<String> cmd = FfmpegTranscodePlanner.buildTranscodeCommand(
                     ffmpegManager.ffmpeg(), job.source, job.media, job.audioIndex, part);
             log.info("Crewcast ffmpeg: {}", String.join(" ", cmd));
@@ -580,15 +637,17 @@ public class AudioFixService {
                     new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
-                    if (line.startsWith("out_time_us=")) {
-                        long us = parseLongSuffix(line);
-                        if (durationSec > 0) {
-                            int pct = (int) Math.min(99, (us / 1_000_000.0) / durationSec * 100);
-                            job.progress = Math.max(job.progress, pct);
-                            job.message = "Converting";
-                        }
-                    } else if (line.startsWith("progress=end")) {
-                        job.progress = 100;
+                    FfmpegProgressParser.Snapshot snap =
+                            FfmpegProgressParser.applyLine(line, job.durationSec, job.progress);
+                    job.progress = snap.progress;
+                    if (snap.speed != null && snap.speed > 0) {
+                        job.speed = snap.speed;
+                    }
+                    if (snap.etaSeconds != null) {
+                        job.etaSeconds = snap.etaSeconds;
+                    }
+                    if (line.startsWith("out_time_us=") || line.startsWith("progress=end")) {
+                        job.message = "Converting";
                     }
                 }
             }
@@ -663,11 +722,24 @@ public class AudioFixService {
         if (size <= cap) {
             return;
         }
+        java.util.Set<Path> protectedOutputs = jobs.values().stream()
+                .filter(j -> j.state == AudioFixJobState.RUNNING || j.state == AudioFixJobState.QUEUED)
+                .map(j -> {
+                    try {
+                        return cacheFile(j.source, j.audioIndex).toAbsolutePath().normalize();
+                    } catch (IOException e) {
+                        return null;
+                    }
+                })
+                .filter(java.util.Objects::nonNull)
+                .collect(java.util.stream.Collectors.toSet());
         List<Path> files = new ArrayList<>();
         try (var stream = Files.list(CrewcastPaths.cacheDir())) {
             for (Path p : stream.toList()) {
                 if (Files.isRegularFile(p) && p.getFileName().toString().endsWith(".mp4")) {
-                    files.add(p);
+                    if (!protectedOutputs.contains(p.toAbsolutePath().normalize())) {
+                        files.add(p);
+                    }
                 }
             }
         }
@@ -700,20 +772,17 @@ public class AudioFixService {
     }
 
     public void cleanupStaleParts() throws IOException {
-        deleteStalePartFiles();
+        ConversionPartFiles.deleteStaleAudioParts(CrewcastPaths.cacheDir());
     }
 
-    private void deleteStalePartFiles() throws IOException {
-        Path cache = CrewcastPaths.cacheDir();
-        if (!Files.isDirectory(cache)) {
-            return;
-        }
-        try (var stream = Files.list(cache)) {
-            for (Path p : stream.toList()) {
-                if (p.getFileName().toString().endsWith(".part")) {
-                    Files.deleteIfExists(p);
-                }
-            }
+    /** Tests: wait until the worker queue is drained (bounded). */
+    public void awaitWorkerIdle(long timeout, TimeUnit unit) throws InterruptedException {
+        try {
+            worker.submit(() -> {}).get(timeout, unit);
+        } catch (java.util.concurrent.ExecutionException ex) {
+            throw new IllegalStateException("audio worker failed while idling", ex.getCause());
+        } catch (java.util.concurrent.TimeoutException ex) {
+            throw new IllegalStateException("audio worker did not idle within " + timeout + " " + unit, ex);
         }
     }
 
@@ -722,24 +791,39 @@ public class AudioFixService {
         if (p != null) {
             p.destroyForcibly();
         }
-        for (MutableJob job : jobs.values()) {
-            if (job.state == AudioFixJobState.RUNNING || job.state == AudioFixJobState.QUEUED) {
-                job.state = AudioFixJobState.FAILED;
-                job.message = "Cancelled";
+        for (MutableJob job : new ArrayList<>(jobs.values())) {
+            if (job.outputPath != null) {
+                ConversionPartFiles.deleteIfExists(job.outputPath);
             }
-        }
-        try {
-            Path cache = CrewcastPaths.cacheDir();
-            if (Files.isDirectory(cache)) {
-                try (var stream = Files.list(cache)) {
-                    for (Path part : stream.filter(x -> x.getFileName().toString().endsWith(".part")).toList()) {
-                        Files.deleteIfExists(part);
-                    }
-                }
-            }
-        } catch (IOException ignored) {
         }
         if (wait && p != null) {
+            try {
+                p.waitFor(5, TimeUnit.SECONDS);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        jobs.clear();
+    }
+
+    /** Stops viewer-started jobs when sharing ends; host prep continues. */
+    public void cancelViewerJobs(boolean wait) {
+        List<MutableJob> toCancel = jobs.values().stream()
+                .filter(j -> j.viewerInitiated || j.startedBy == ConversionStartedBy.VIEWER)
+                .filter(j -> j.state == AudioFixJobState.QUEUED || j.state == AudioFixJobState.RUNNING)
+                .toList();
+        if (toCancel.isEmpty()) {
+            return;
+        }
+        Process p = runningProcess;
+        boolean killRunning = toCancel.stream().anyMatch(j -> j.state == AudioFixJobState.RUNNING);
+        if (killRunning && p != null) {
+            p.destroyForcibly();
+        }
+        for (MutableJob job : toCancel) {
+            cancelJob(job);
+        }
+        if (wait && killRunning && p != null) {
             try {
                 p.waitFor(5, TimeUnit.SECONDS);
             } catch (InterruptedException ignored) {
@@ -750,23 +834,16 @@ public class AudioFixService {
 
     private void cancelJobsForPathPrefix(Path shareRoot) {
         Path norm = shareRoot.toAbsolutePath().normalize();
-        jobs.entrySet().removeIf(e -> e.getValue().source.startsWith(norm));
+        List<MutableJob> toCancel = jobs.values().stream()
+                .filter(j -> j.source.startsWith(norm))
+                .toList();
+        for (MutableJob job : toCancel) {
+            cancelJob(job);
+        }
     }
 
     private void startWorkerIfNeeded() {
         workerStarted.set(true);
-    }
-
-    private static long parseLongSuffix(String line) {
-        int i = line.indexOf('=');
-        if (i < 0) {
-            return 0;
-        }
-        try {
-            return Long.parseLong(line.substring(i + 1).trim());
-        } catch (NumberFormatException e) {
-            return 0;
-        }
     }
 
     private static final class MutableJob {
@@ -778,9 +855,15 @@ public class AudioFixService {
         volatile String message = "Queued";
         volatile boolean highPriority;
         volatile boolean viewerInitiated;
-        volatile boolean exemptFromIdleCancel;
+        volatile boolean hostInitiated;
         volatile long enqueuedAt = System.nanoTime();
-        volatile long lastStatusPollMs = System.currentTimeMillis();
+        volatile ConversionStartedBy startedBy;
+        volatile String startedByLabel;
+        volatile String startedByClientId;
+        volatile Double speed;
+        volatile Integer etaSeconds;
+        volatile double durationSec;
+        volatile Path outputPath;
 
         MutableJob(Path source, int audioIndex, ProbedMedia media) {
             this.source = source.toAbsolutePath().normalize();
@@ -788,8 +871,18 @@ public class AudioFixService {
             this.media = media;
         }
 
-        AudioFixStatus toStatus(String key) {
-            return new AudioFixStatus(state, progress, message, key);
+        AudioFixStatus toStatus(String key, int queueAhead) {
+            return new AudioFixStatus(
+                    state,
+                    progress,
+                    message,
+                    key,
+                    speed,
+                    etaSeconds,
+                    startedBy,
+                    startedByLabel,
+                    queueAhead,
+                    startedByClientId);
         }
 
         void fail(String msg) {

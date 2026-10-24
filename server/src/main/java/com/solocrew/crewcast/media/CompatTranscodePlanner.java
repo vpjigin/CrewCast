@@ -53,13 +53,13 @@ final class CompatTranscodePlanner {
         cmd.add("high");
         cmd.add("-level");
         cmd.add("4.1");
-        int bitrateMbps = maxHeight >= 1080 ? 5 : 3;
+        int targetKbps = CompatVideoBitrate.targetKbps(media, maxHeight, media.formatBitRateBps());
         cmd.add("-b:v");
-        cmd.add(bitrateMbps + "M");
+        cmd.add(targetKbps + "k");
         cmd.add("-maxrate");
-        cmd.add((bitrateMbps + 1) + "M");
+        cmd.add((int) Math.round(targetKbps * 1.2) + "k");
         cmd.add("-bufsize");
-        cmd.add((bitrateMbps * 2) + "M");
+        cmd.add((targetKbps * 2) + "k");
 
         if (!media.audioTracks().isEmpty() && audioRelativeIndex >= 0) {
             AudioStreamInfo audio = media.audioByRelativeIndex(audioRelativeIndex).orElse(null);

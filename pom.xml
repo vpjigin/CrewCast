@@ -38,7 +38,7 @@
     <properties>
         <java.version>21</java.version>
         <maven.compiler.release>21</maven.compiler.release>
-        <!-- JUnit 5 tags: empty = no filter; CI uses -DexcludedGroups=e2e, local e2e-only uses -Dgroups=e2e -->
+        <!-- JUnit 5 tags: empty = no filter; CI uses -DexcludedGroups=e2e,gui; local e2e uses -Dgroups=e2e -->
         <groups></groups>
         <excludedGroups></excludedGroups>
         <flatlaf.version>3.4.1</flatlaf.version>

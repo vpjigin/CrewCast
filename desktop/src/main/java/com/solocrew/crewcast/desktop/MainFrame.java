@@ -16,10 +16,20 @@ import com.solocrew.crewcast.desktop.ui.StatusDot;
 import com.solocrew.crewcast.desktop.ui.StyledButton;
 import com.solocrew.crewcast.desktop.ui.ToggleSwitch;
 import com.solocrew.crewcast.desktop.ui.UrlField;
+import com.solocrew.crewcast.desktop.ui.PlainTextLabels;
 import com.solocrew.crewcast.desktop.ui.ViewportWidthPanel;
+import com.solocrew.crewcast.desktop.ui.WrapLabel;
+import com.solocrew.crewcast.desktop.ui.LoadingBar;
+import com.solocrew.crewcast.desktop.share.ShareListController;
+import com.solocrew.crewcast.desktop.share.ShareListUiMode;
+import com.solocrew.crewcast.desktop.share.ShareRowActions;
+import com.solocrew.crewcast.desktop.share.ShareRowContext;
+import com.solocrew.crewcast.desktop.share.ShareRowFactory;
+import com.solocrew.crewcast.media.ConversionStartedBy;
 import com.solocrew.crewcast.net.DownloadFailureDetails;
 import com.solocrew.crewcast.facade.ShareListItem;
 import com.solocrew.crewcast.facade.ShareVideoCompatRow;
+import com.solocrew.crewcast.media.CompatFixService;
 import com.solocrew.crewcast.media.CompatUiState;
 import com.solocrew.crewcast.share.ShareRegistry;
 import com.solocrew.crewcast.facade.SharingLinks;
@@ -71,8 +81,14 @@ import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class MainFrame extends JFrame implements SharingUiListener {
+
+    private static final Logger LOG = Logger.getLogger(MainFrame.class.getName());
 
     private static final boolean MAC_OS =
             System.getProperty("os.name", "").toLowerCase().contains("mac");
@@ -99,8 +115,27 @@ public class MainFrame extends JFrame implements SharingUiListener {
     private StyledButton newLinkBtn;
     private QrCodeTile qrCodeTile;
     private final StyledButton removeAllSharesBtn = new StyledButton("Remove all");
+    private StyledButton addFolderHeaderBtn;
+    private StyledButton addFilesHeaderBtn;
+    private final JPanel tunnelConnectRow = new JPanel(new MigLayout("ins 8 0 0 0, gap 8, fillx", "[grow,fill]", "[]2[]"));
+    private final LoadingBar tunnelConnectBar = new LoadingBar();
+    private final JLabel tunnelConnectLabel = new JLabel("Connecting tunnel…");
+    private boolean springReady;
+    private int shareListDisplayCount;
+    private int shareListLoadGeneration;
+    private final java.util.concurrent.atomic.AtomicBoolean compatRefreshPending = new java.util.concurrent.atomic.AtomicBoolean(false);
+    private final java.util.concurrent.atomic.AtomicBoolean compatRefreshRunning = new java.util.concurrent.atomic.AtomicBoolean(false);
+    private final ShareListController shareListController = new ShareListController();
+    private ShareRowFactory shareRowFactory;
+    private final ExecutorService shareListLoader = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "share-list-probe");
+        t.setDaemon(true);
+        return t;
+    });
     private JPanel tunnelErrRow;
 
+    private final JPanel startupBanner = new JPanel(new MigLayout("ins 0, fillx", "[grow,fill]", "[]"));
+    private final LoadingBar startupLoadingBar = new LoadingBar();
     private final JPanel downloadBanner = new JPanel(new MigLayout("ins 12 20, gap 14, fill", "[pref!][grow,fill][220!]", "[]"));
     private final JLabel downloadTitle = new JLabel("Setting up the secure tunnel");
     private final JLabel downloadSubtitle = new JLabel();
@@ -109,7 +144,9 @@ public class MainFrame extends JFrame implements SharingUiListener {
 
     private final JPanel listCards = new JPanel(new CardLayout());
     private final ViewportWidthPanel sharesContainer;
-    private final JScrollPane shareScroll;
+    private final JPanel listStack;
+    private final JScrollPane leftListScroll;
+    private final JPanel conversionQueueFooterSlot = new JPanel(new MigLayout("ins 0, fillx", "[grow,fill]", "[]"));
     private final JPanel emptyState = new JPanel();
     private final DashedDropZone compactDropZone = new DashedDropZone("Drop folders or video files here");
 
@@ -149,7 +186,7 @@ public class MainFrame extends JFrame implements SharingUiListener {
 
     private final StatusDot tunnelBarDot = new StatusDot();
     private final FitLabel tunnelBarText = new FitLabel();
-    private final FitLabel serverPortLabel = new FitLabel();
+    private final JLabel serverPortLabel = new JLabel();
     private final ElideLabel keepAwakeLabel = new ElideLabel();
     private final FitLabel statusBarVersion = new FitLabel();
 
@@ -163,6 +200,7 @@ public class MainFrame extends JFrame implements SharingUiListener {
 
     public MainFrame() {
         super("Crewcast");
+        shareRowFactory = createShareRowFactory();
         setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
         getContentPane().setBackground(CrewcastTheme.WINDOW);
 
@@ -175,11 +213,20 @@ public class MainFrame extends JFrame implements SharingUiListener {
         rightScroll.getVerticalScrollBar().setUnitIncrement(16);
 
         sharesContainer = new ViewportWidthPanel(new MigLayout("ins 0, gap 8, fillx, wrap 1", "[grow,fill]", "[]"));
-        shareScroll = new JScrollPane(sharesContainer);
-        shareScroll.setBorder(null);
-        shareScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-        shareScroll.getViewport().setBackground(CrewcastTheme.WINDOW);
-        shareScroll.getVerticalScrollBar().setUnitIncrement(16);
+        listStack = new JPanel(new MigLayout("ins 0, gap 8, fillx", "[grow,fill]", "[]"));
+        listStack.setOpaque(false);
+        listStack.add(sharesContainer, "growx, wrap");
+        listStack.add(conversionQueueFooterSlot, "growx, wrap");
+        listStack.add(compactDropZone, "growx, wrap");
+        JPanel listBottomFiller = new JPanel();
+        listBottomFiller.setOpaque(false);
+        listStack.add(listBottomFiller, "grow, pushy");
+        leftListScroll = new JScrollPane(listStack);
+        leftListScroll.setBorder(null);
+        leftListScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        leftListScroll.getViewport().setBackground(CrewcastTheme.WINDOW);
+        leftListScroll.getVerticalScrollBar().setUnitIncrement(16);
+        conversionQueueFooterSlot.setOpaque(false);
 
         buildUi();
         installDropTarget(sharesContainer);
@@ -196,6 +243,7 @@ public class MainFrame extends JFrame implements SharingUiListener {
 
             @Override
             public void windowClosing(WindowEvent e) {
+                shareListLoader.shutdownNow();
                 if (sharingService != null) {
                     sharingService.removeListener(MainFrame.this);
                     sharingService.shutdown();
@@ -218,6 +266,7 @@ public class MainFrame extends JFrame implements SharingUiListener {
         if (MAC_OS) {
             configureMacIntegratedTitleBar();
         }
+        setStartupLoading(true);
         LayoutDebug.wire("contentPane", getContentPane());
         LayoutDebug.wire("mainArea", mainArea);
         LayoutDebug.wire("leftColumn", leftColumn);
@@ -249,6 +298,8 @@ public class MainFrame extends JFrame implements SharingUiListener {
         chapterThumbnailsToggle.setSelected(sharingService.getSettings().isChapterThumbnails());
         syncFixAudioToggleFromSettings();
 
+        springReady = true;
+        setStartupLoading(false);
         reloadShareList();
         refreshDynamicUi();
     }
@@ -270,12 +321,19 @@ public class MainFrame extends JFrame implements SharingUiListener {
         sharingButton.setHideFocusRingOnMouse(true);
         onboardingStartButton.setHideFocusRingOnMouse(true);
 
-        JPanel north = new JPanel(new BorderLayout());
+        JPanel north = new JPanel();
+        north.setLayout(new javax.swing.BoxLayout(north, javax.swing.BoxLayout.Y_AXIS));
         north.setOpaque(false);
         if (MAC_OS) {
-            north.add(buildMacTitleBar(), BorderLayout.NORTH);
+            north.add(buildMacTitleBar());
         }
-        north.add(buildDownloadBanner(), BorderLayout.CENTER);
+        startupBanner.setBackground(CrewcastTheme.TITLE_BAR);
+        startupBanner.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, CrewcastTheme.BORDER));
+        startupLoadingBar.setIndeterminate(true);
+        startupBanner.add(startupLoadingBar, "growx");
+        startupBanner.setVisible(false);
+        north.add(startupBanner);
+        north.add(buildDownloadBanner());
         rootPanel.add(north, BorderLayout.NORTH);
 
         buildLeftColumnContent();
@@ -354,16 +412,16 @@ public class MainFrame extends JFrame implements SharingUiListener {
         shareHeaderLabel.setFont(Fonts.ui(500, 12.5f));
         shareHeaderLabel.setForeground(CrewcastTheme.META);
 
-        StyledButton folderBtn = new StyledButton("Folder", Icons.of("plus", 14, CrewcastTheme.TEXT));
-        folderBtn.setVariant(StyledButton.Variant.SECONDARY);
-        folderBtn.addActionListener(e -> chooseFolder());
-        StyledButton filesBtn = new StyledButton("Files", Icons.of("plus", 14, CrewcastTheme.TEXT));
-        filesBtn.setVariant(StyledButton.Variant.SECONDARY);
-        filesBtn.addActionListener(e -> chooseFiles());
+        addFolderHeaderBtn = new StyledButton("Folder", Icons.of("plus", 14, CrewcastTheme.TEXT));
+        addFolderHeaderBtn.setVariant(StyledButton.Variant.SECONDARY);
+        addFolderHeaderBtn.addActionListener(e -> chooseFolder());
+        addFilesHeaderBtn = new StyledButton("Files", Icons.of("plus", 14, CrewcastTheme.TEXT));
+        addFilesHeaderBtn.setVariant(StyledButton.Variant.SECONDARY);
+        addFilesHeaderBtn.addActionListener(e -> chooseFiles());
         shareHeaderButtons.setLayout(new MigLayout("ins 0, gap 6", "[]", "[]"));
         shareHeaderButtons.setOpaque(false);
-        shareHeaderButtons.add(folderBtn, "shrink 0, growx 0");
-        shareHeaderButtons.add(filesBtn, "shrink 0, growx 0");
+        shareHeaderButtons.add(addFolderHeaderBtn, "shrink 0, growx 0");
+        shareHeaderButtons.add(addFilesHeaderBtn, "shrink 0, growx 0");
 
         removeAllSharesBtn.setVariant(StyledButton.Variant.GHOST);
         removeAllSharesBtn.setFont(Fonts.ui(600, 11));
@@ -386,10 +444,9 @@ public class MainFrame extends JFrame implements SharingUiListener {
         leftColumn.add(headerRow, "growx, wrap");
 
         buildEmptyState();
-        JPanel listPanel = new JPanel(new MigLayout("fill, ins 0, gap 8", "[grow,fill]", "[grow,fill][]"));
+        JPanel listPanel = new JPanel(new MigLayout("fill, ins 0, gap 0", "[grow,fill]", "[grow,fill]"));
         listPanel.setOpaque(false);
-        listPanel.add(shareScroll, "grow, push, wrap");
-        listPanel.add(compactDropZone, "growx");
+        listPanel.add(leftListScroll, "grow, push");
         listCards.setOpaque(false);
         listCards.add(emptyState, "empty");
         listCards.add(listPanel, "list");
@@ -526,7 +583,7 @@ public class MainFrame extends JFrame implements SharingUiListener {
     private RoundedPanel buildStatusCard() {
         RoundedPanel card = new RoundedPanel();
         statusCard = card;
-        card.setLayout(new MigLayout("ins 16 18, gap 14, fillx", "[12!][grow,fill][pref!]", "[]"));
+        card.setLayout(new MigLayout("ins 16 18, gap 14, fillx", "[12!][grow,fill][pref!, align right]", "[][]"));
         card.setFill(CrewcastTheme.STATUS_GRADIENT_START);
         card.setGradientEnd(CrewcastTheme.CARD);
         card.setBorderColor(CrewcastTheme.STATUS_BORDER);
@@ -551,7 +608,16 @@ public class MainFrame extends JFrame implements SharingUiListener {
         card.add(statusCardDot, "aligny center");
         card.add(text, "growx, wmin 0");
         sharingButton.packToContent();
-        card.add(sharingButton, "aligny center, shrink 0");
+        card.add(sharingButton, "cell 2 0, aligny center, alignx right, shrink 0");
+
+        tunnelConnectRow.setOpaque(false);
+        tunnelConnectBar.setIndeterminate(true);
+        tunnelConnectLabel.setFont(Fonts.ui(500, 12f));
+        tunnelConnectLabel.setForeground(CrewcastTheme.MUTED);
+        tunnelConnectRow.add(tunnelConnectBar, "growx, wrap");
+        tunnelConnectRow.add(tunnelConnectLabel, "growx");
+        tunnelConnectRow.setVisible(false);
+        card.add(tunnelConnectRow, "skip 1, span 2, growx, wmin 0");
         return card;
     }
 
@@ -832,7 +898,7 @@ public class MainFrame extends JFrame implements SharingUiListener {
         tunnelSeg.add(tunnelBarDot, "aligny center, shrink 0");
         tunnelSeg.add(tunnelBarText, "aligny center, shrink 0");
         left.add(tunnelSeg, "shrink 0");
-        left.add(serverPortLabel, "aligny center, shrink 0");
+        left.add(serverPortLabel, "aligny center, shrink 0, grow 0");
         left.add(keepAwakeLabel, "aligny center, growx, wmin 0");
 
         JPanel east = new JPanel(new MigLayout("ins 0, gap 14", "[]", "[30!]"));
@@ -924,13 +990,71 @@ public class MainFrame extends JFrame implements SharingUiListener {
     }
 
     private void reloadShareList() {
+        reloadShareList(true);
+    }
+
+    private void reloadShareList(boolean showCheckingPlaceholder) {
         if (sharingService == null) {
             return;
         }
+        final int generation = ++shareListLoadGeneration;
+        final boolean wasChecking = shareListController.mode() == ShareListUiMode.CHECKING;
+        if (showCheckingPlaceholder) {
+            applyShareListUi(sharingService.listSharesSkeleton(), ShareListUiMode.CHECKING);
+        }
+        shareListLoader.execute(() -> {
+            List<ShareListItem> probed;
+            ShareListUiMode resultMode = ShareListUiMode.NORMAL;
+            try {
+                probed = sharingService.listShares();
+            } catch (Throwable ex) {
+                LOG.log(Level.SEVERE, "Share list probe failed", ex);
+                probed = shareListController.items().isEmpty()
+                        ? sharingService.listSharesSkeleton()
+                        : shareListController.items();
+                resultMode = (showCheckingPlaceholder || wasChecking)
+                        ? ShareListUiMode.CHECK_FAILED
+                        : ShareListUiMode.NORMAL;
+            }
+            List<ShareListItem> finalProbed = probed;
+            ShareListUiMode finalMode = resultMode;
+            SwingUtilities.invokeLater(() -> {
+                if (generation != shareListLoadGeneration) {
+                    return;
+                }
+                applyShareListUi(finalProbed, finalMode);
+            });
+        });
+    }
+
+    private void applyShareListUi(List<ShareListItem> entries, ShareListUiMode mode) {
+        shareListController.apply(entries, mode);
+        shareListDisplayCount = entries.size();
         sharesContainer.removeAll();
-        List<ShareListItem> entries = sharingService.listShares();
         for (ShareListItem item : entries) {
-            sharesContainer.add(buildShareRow(item), "growx, wmin 0");
+            try {
+                sharesContainer.add(shareRowFactory.buildShareRow(item, mode), "growx, wmin 0");
+            } catch (Throwable ex) {
+                LOG.log(Level.SEVERE, "Failed to build share row for " + item.entry().getPath(), ex);
+                sharesContainer.add(shareRowFactory.buildShareRowFallback(item), "growx, wmin 0");
+            }
+        }
+        conversionQueueFooterSlot.removeAll();
+        if (mode == ShareListUiMode.NORMAL && sharingService != null) {
+            try {
+                var q = sharingService.conversionQueueSummary();
+                if (shouldShowConversionQueueFooter(q)) {
+                    conversionQueueFooterSlot.add(buildConversionQueueFooter(q), "growx");
+                    conversionQueueFooterSlot.setVisible(true);
+                } else {
+                    conversionQueueFooterSlot.setVisible(false);
+                }
+            } catch (Exception ex) {
+                LOG.log(Level.FINE, "Conversion queue summary unavailable", ex);
+                conversionQueueFooterSlot.setVisible(false);
+            }
+        } else {
+            conversionQueueFooterSlot.setVisible(false);
         }
         boolean empty = entries.isEmpty();
         CardLayout cards = (CardLayout) listCards.getLayout();
@@ -948,166 +1072,77 @@ public class MainFrame extends JFrame implements SharingUiListener {
         folderShareNotice.setVisible(hasFolder);
     }
 
-    private JPanel buildShareRow(ShareListItem item) {
-        JPanel block = new JPanel(new MigLayout("ins 0, gap 4, fillx", "[grow,fill]", "[]"));
-        block.setOpaque(false);
-        block.add(buildShareRowMain(item), "growx, wrap");
-        if (item.entry().getKind() == ShareEntry.Kind.FOLDER
-                && item.folderVideos() != null
-                && !item.folderVideos().isEmpty()) {
-            JPanel nested = new JPanel(new MigLayout("ins 0, gap 4, fillx", "[grow,fill]", "[]"));
-            nested.setOpaque(false);
-            for (ShareVideoCompatRow v : item.folderVideos()) {
-                nested.add(buildFolderVideoCompatRow(v), "growx, wrap");
-            }
-            block.add(nested, "gapleft 46, growx");
-        }
-        return block;
+    private ShareRowFactory createShareRowFactory() {
+        ShareRowContext ctx = new ShareRowContext(
+                this::isCompatEncoderAvailableForUi,
+                this::estimateCompatMinutesForUi,
+                new ShareRowActions() {
+                    @Override
+                    public void removeShare(int index) {
+                        if (sharingService != null) {
+                            sharingService.removeShare(index);
+                        }
+                    }
+
+                    @Override
+                    public void reloadShareList(boolean showCheckingPlaceholder) {
+                        MainFrame.this.reloadShareList(showCheckingPlaceholder);
+                    }
+
+                    @Override
+                    public void showCompatPopup(Component invoker, ShareListItem shareItem, ShareVideoCompatRow videoRow) {
+                        MainFrame.this.showCompatPopup(invoker, shareItem, videoRow);
+                    }
+
+                    @Override
+                    public void prepareCompatForShareEntry(
+                            ShareEntry entry, ShareListItem shareItem, Path folderVideoPath) {
+                        runCompatAction(() -> sharingService.prepareCompatForShareEntry(entry), shareItem, folderVideoPath);
+                    }
+
+                    @Override
+                    public void cancelCompatForPath(Path path, ShareListItem shareItem) {
+                        runCompatAction(() -> sharingService.cancelCompatForPath(path), shareItem, null);
+                    }
+
+                    @Override
+                    public void prepareAllNeedingCompat() {
+                        runCompatAction(() -> sharingService.prepareAllNeedingCompat());
+                    }
+
+                    @Override
+                    public void prepareAllCompatForFolder(ShareEntry folderEntry) {
+                        runCompatAction(() -> sharingService.prepareAllCompatForFolder(folderEntry));
+                    }
+                });
+        return new ShareRowFactory(ctx);
     }
 
-    private JPanel buildShareRowMain(ShareListItem item) {
-        ShareEntry entry = item.entry();
-        RoundedPanel row = new RoundedPanel();
-        row.setLayout(new MigLayout("ins 10 10 10 12, gap 10, fillx", "[36!][grow,fill][22!, shrink 0][28!, shrink 0][28!, shrink 0]", "[]"));
-        row.setFill(CrewcastTheme.CARD);
-        row.setBorderColor(CrewcastTheme.BORDER);
-        row.setArc(CrewcastTheme.RADIUS_ROW);
 
-        RoundedPanel iconTile = new RoundedPanel();
-        iconTile.setLayout(new MigLayout("ins 0, align center", "[]", "[]"));
-        iconTile.setFill(CrewcastTheme.ICON_TILE);
-        iconTile.setBorderColor(CrewcastTheme.BORDER);
-        iconTile.setArc(9);
-        iconTile.setPreferredSize(new Dimension(36, 36));
-        String iconName = entry.getKind() == ShareEntry.Kind.FOLDER ? "folder" : "video";
-        iconTile.add(new JLabel(Icons.of(iconName, 18, CrewcastTheme.LINK)), "align center");
-        if (item.subtitleMeta() != null && !item.subtitleMeta().isBlank()) {
-            iconTile.setToolTipText(item.subtitleMeta());
+    private static boolean shouldShowConversionQueueFooter(com.solocrew.crewcast.facade.ConversionQueueSummary q) {
+        return q.running() > 0 || q.queued() > 0 || q.needsConversion() > 0;
+    }
+
+    private JPanel buildConversionQueueFooter(com.solocrew.crewcast.facade.ConversionQueueSummary q) {
+        JPanel row = new JPanel(new MigLayout("ins 8 12, gap 4 8, fillx", "[grow,fill][pref!]", "[][]"));
+        row.setOpaque(false);
+        JLabel title = new JLabel("Conversion queue");
+        title.setFont(Fonts.ui(600, 12.5f));
+        title.setForeground(CrewcastTheme.TEXT);
+        WrapLabel stats = new WrapLabel();
+        stats.setFont(Fonts.ui(500, 12f));
+        stats.setForeground(CrewcastTheme.MUTED);
+        stats.setFullText(q.running() + " running · " + q.queued() + " waiting");
+        row.add(title, "growx, wmin 0, wrap");
+        row.add(stats, "growx, wmin 0");
+        if (q.needsConversion() > 0) {
+            StyledButton all = new StyledButton("Convert all (" + q.needsConversion() + ")");
+            all.setVariant(StyledButton.Variant.SECONDARY);
+            all.packToContent();
+            all.addActionListener(e -> runCompatAction(() -> sharingService.prepareAllNeedingCompat()));
+            row.add(all, "spany 2, aligny center");
         }
-
-        ElideLabel name = new ElideLabel();
-        name.setFullText(Path.of(entry.getPath()).getFileName().toString());
-        name.setFont(Fonts.ui(600, 13));
-        name.setForeground(CrewcastTheme.TEXT);
-        ElideLabel meta = new ElideLabel();
-        String metaText = item.meta();
-        if (item.audioMeta() != null && !item.audioMeta().isBlank()) {
-            metaText = metaText + " · " + item.audioMeta();
-        }
-        if (item.compatSummary() != null && !item.compatSummary().isBlank()) {
-            metaText = metaText + " · " + item.compatSummary();
-        }
-        meta.setFullText(metaText);
-        meta.setFont(Fonts.ui(500, 12.5f));
-        meta.setForeground(CrewcastTheme.MUTED);
-        JPanel text = new JPanel(new MigLayout("ins 0, gap 0", "[grow,fill]", "[]2[]"));
-        text.setOpaque(false);
-        if (item.hevcWarning()) {
-            JPanel nameRow = new JPanel(new MigLayout("ins 0, gap 6", "[][grow,fill]", "[]"));
-            nameRow.setOpaque(false);
-            JLabel hevcWarn = new JLabel(Icons.of("warning", 14, new java.awt.Color(0xeab308)));
-            hevcWarn.setToolTipText(
-                    "H.265 video: some devices (older phones, some Android and Windows browsers) may not play the picture.");
-            nameRow.add(hevcWarn, "aligny center");
-            nameRow.add(name, "growx, wmin 0");
-            text.add(nameRow, "growx, wmin 0, wrap");
-        } else {
-            text.add(name, "growx, wmin 0, wrap");
-        }
-        text.add(meta, "growx, wmin 0");
-
-        boolean videoFile = entry.getKind() == ShareEntry.Kind.FILE
-                && ShareRegistry.isVideoFileName(Path.of(entry.getPath()).getFileName().toString());
-        JLabel compatIcon = compatStatusIcon(
-                videoFile ? item.fileCompatState() : CompatUiState.NOT_NEEDED,
-                videoFile ? item.fileCompatTooltip() : item.compatSummary());
-        if (!videoFile && entry.getKind() == ShareEntry.Kind.FOLDER) {
-            compatIcon = compatStatusIcon(folderAggregateState(item), item.compatSummary());
-        }
-
-        StyledButton tvMenu = new StyledButton("TV");
-        tvMenu.setVariant(StyledButton.Variant.GHOST);
-        tvMenu.packToContent();
-        tvMenu.setToolTipText("Prepare or cancel TV-safe H.264 version");
-        tvMenu.addActionListener(e -> showCompatPopup(tvMenu, item, null));
-
-        ShareRemoveButton remove = new ShareRemoveButton();
-        remove.addActionListener(e -> {
-            sharingService.removeShare(item.index());
-            reloadShareList();
-        });
-
-        row.add(iconTile, "aligny center");
-        row.add(text, "growx, wmin 0");
-        row.add(compatIcon, "aligny center, shrink 0");
-        row.add(tvMenu, "aligny center, shrink 0");
-        row.add(remove, "aligny center, shrink 0");
         return row;
-    }
-
-    private JPanel buildFolderVideoCompatRow(ShareVideoCompatRow v) {
-        RoundedPanel row = new RoundedPanel();
-        row.setLayout(new MigLayout("ins 6 10 6 12, gap 8, fillx", "[grow,fill][22!, shrink 0][28!, shrink 0]", "[]"));
-        row.setFill(CrewcastTheme.CARD);
-        row.setBorderColor(CrewcastTheme.BORDER);
-        row.setArc(CrewcastTheme.RADIUS_ROW);
-        ElideLabel name = new ElideLabel();
-        name.setFullText(v.displayName());
-        name.setFont(Fonts.ui(500, 12.5f));
-        name.setForeground(CrewcastTheme.TEXT);
-        JLabel icon = compatStatusIcon(v.state(), v.tooltip());
-        StyledButton tvMenu = new StyledButton("TV");
-        tvMenu.setVariant(StyledButton.Variant.GHOST);
-        tvMenu.packToContent();
-        tvMenu.addActionListener(e -> showCompatPopup(tvMenu, null, v));
-        row.add(name, "growx, wmin 0");
-        row.add(icon, "aligny center");
-        row.add(tvMenu, "aligny center");
-        return row;
-    }
-
-    private CompatUiState folderAggregateState(ShareListItem item) {
-        if (item.folderVideos() == null || item.folderVideos().isEmpty()) {
-            return CompatUiState.NOT_NEEDED;
-        }
-        for (ShareVideoCompatRow v : item.folderVideos()) {
-            if (v.state() == CompatUiState.CONVERTING || v.state() == CompatUiState.QUEUED) {
-                return v.state();
-            }
-            if (v.state() == CompatUiState.FAILED || v.state() == CompatUiState.UNAVAILABLE) {
-                return v.state();
-            }
-            if (v.state() == CompatUiState.NEEDED) {
-                return CompatUiState.NEEDED;
-            }
-        }
-        return CompatUiState.READY;
-    }
-
-    private JLabel compatStatusIcon(CompatUiState state, String tooltip) {
-        Color c = CrewcastTheme.MUTED;
-        String icon = "video";
-        switch (state) {
-            case READY -> {
-                c = CrewcastTheme.SUCCESS;
-                icon = "play";
-            }
-            case CONVERTING, QUEUED -> {
-                c = new Color(0xeab308);
-                icon = "refresh";
-            }
-            case FAILED, UNAVAILABLE -> {
-                c = CrewcastTheme.DANGER_TEXT;
-                icon = "warning";
-            }
-            case NEEDED -> c = CrewcastTheme.LINK;
-            case NOT_NEEDED -> c = CrewcastTheme.META;
-            default -> {
-            }
-        }
-        JLabel lab = new JLabel(Icons.of(icon, 16, c));
-        lab.setToolTipText(tooltip != null && !tooltip.isBlank() ? tooltip : state.name());
-        return lab;
     }
 
     private void showCompatPopup(Component invoker, ShareListItem shareItem, ShareVideoCompatRow videoRow) {
@@ -1123,10 +1158,16 @@ public class MainFrame extends JFrame implements SharingUiListener {
             JMenuItem prep = new JMenuItem("Prepare TV version");
             prep.addActionListener(e -> {
                 if (videoRow != null) {
-                    runCompatAction(() -> sharingService.prepareCompatForShareEntry(
-                            new ShareEntry(videoRow.path().toString(), ShareEntry.Kind.FILE)));
+                    runCompatAction(
+                            () -> sharingService.prepareCompatForShareEntry(
+                                    new ShareEntry(videoRow.path().toString(), ShareEntry.Kind.FILE)),
+                            shareItem,
+                            videoRow.path());
                 } else if (shareItem != null) {
-                    runCompatAction(() -> sharingService.prepareCompatForShareEntry(shareItem.entry()));
+                    runCompatAction(
+                            () -> sharingService.prepareCompatForShareEntry(shareItem.entry()),
+                            shareItem,
+                            null);
                 }
             });
             menu.add(prep);
@@ -1150,15 +1191,48 @@ public class MainFrame extends JFrame implements SharingUiListener {
     }
 
     private void runCompatAction(CompatAction action) {
-        if (sharingService == null) {
-            return;
-        }
+        runCompatAction(action, null, null);
+    }
+
+    private void runCompatAction(CompatAction action, ShareListItem shareItem, Path folderVideoPath) {
         try {
-            action.run();
-            reloadShareList();
+            if (sharingService != null) {
+                action.run();
+            }
+            applyOptimisticCompatAfterPrepare(shareItem, folderVideoPath);
+            if (sharingService != null) {
+                requestCompatRefresh();
+            }
         } catch (Exception ex) {
             javax.swing.JOptionPane.showMessageDialog(this, ex.getMessage(), "TV version", javax.swing.JOptionPane.ERROR_MESSAGE);
         }
+    }
+
+    private void applyOptimisticCompatAfterPrepare(ShareListItem shareItem, Path folderVideoPath) {
+        if (shareListController.items().isEmpty()) {
+            return;
+        }
+        if (sharingService != null) {
+            try {
+                applyShareListUi(
+                        sharingService.refreshCompatFieldsOnItems(shareListController.items()),
+                        ShareListUiMode.NORMAL);
+                return;
+            } catch (Exception ex) {
+                LOG.log(Level.FINE, "Immediate compat refresh after prepare failed", ex);
+            }
+        }
+        shareListController.applyOptimisticCompatStart(shareItem, folderVideoPath, () -> {
+            if (sharingService == null) {
+                throw new IllegalStateException("no sharing service");
+            }
+            try {
+                return sharingService.conversionQueueSummary();
+            } catch (java.io.IOException ex) {
+                throw new java.io.UncheckedIOException(ex);
+            }
+        });
+        applyShareListUi(shareListController.items(), ShareListUiMode.NORMAL);
     }
 
     @FunctionalInterface
@@ -1190,22 +1264,47 @@ public class MainFrame extends JFrame implements SharingUiListener {
         if (sharingService == null) {
             return;
         }
-        List<ShareListItem> items = sharingService.listShares();
-        if (items.isEmpty()) {
+        int items = shareListDisplayCount;
+        if (items == 0 && !sharingService.hasShares()) {
             shareHeaderLabel.setFullText("Nothing shared yet");
             return;
         }
+        if (items == 0) {
+            items = sharingService.shareEntryCount();
+        }
         int videos = sharingService.countVideos();
-        shareHeaderLabel.setFullText(items.size() + (items.size() == 1 ? " item · " : " items · ") + videos
+        shareHeaderLabel.setFullText(items + (items == 1 ? " item · " : " items · ") + videos
                 + (videos == 1 ? " video" : " videos"));
-        removeAllSharesBtn.setVisible(items.size() >= 2);
+        removeAllSharesBtn.setVisible(items >= 2);
+    }
+
+    private void setStartupLoading(boolean loading) {
+        startupBanner.setVisible(loading);
+        if (loading) {
+            tunnelBarText.setText("Starting Crewcast…");
+        }
+        updateAddShareButtonsEnabled();
+        updateSharingButtonState();
+        if (!loading) {
+            refreshDynamicUi();
+        }
+    }
+
+    private void updateAddShareButtonsEnabled() {
+        boolean ok = springReady && sharingService != null;
+        if (addFolderHeaderBtn != null) {
+            addFolderHeaderBtn.setEnabled(ok);
+        }
+        if (addFilesHeaderBtn != null) {
+            addFilesHeaderBtn.setEnabled(ok);
+        }
     }
 
     private void confirmRemoveAllShares() {
         if (sharingService == null || !sharingService.hasShares()) {
             return;
         }
-        int n = sharingService.listShares().size();
+        int n = sharingService.shareEntryCount();
         int choice = javax.swing.JOptionPane.showConfirmDialog(
                 this,
                 "Remove all " + n + " items from the share list?\nFiles and folders on disk are not deleted.",
@@ -1236,7 +1335,9 @@ public class MainFrame extends JFrame implements SharingUiListener {
     }
 
     private void updateSharingButtonState() {
-        if (sharingService == null) {
+        if (!springReady || sharingService == null) {
+            sharingButton.setEnabled(false);
+            onboardingStartButton.setEnabled(false);
             return;
         }
         boolean hasShares = sharingService.hasShares();
@@ -1275,7 +1376,7 @@ public class MainFrame extends JFrame implements SharingUiListener {
     }
 
     private void refreshDynamicUi() {
-        if (sharingService == null || !sharingService.isServerReady()) {
+        if (!springReady || sharingService == null || !sharingService.isServerReady()) {
             return;
         }
         updateSharingButtonState();
@@ -1284,6 +1385,13 @@ public class MainFrame extends JFrame implements SharingUiListener {
 
         boolean sharing = sharingService.isSharingActive();
         boolean hasShares = sharingService.hasShares();
+        boolean tunnelConnecting = sharing
+                && sharingService.getSettings().isStartTunnelWhenSharingStarts()
+                && sharingService.getTunnelState() == TunnelState.STARTING;
+        tunnelConnectRow.setVisible(tunnelConnecting);
+        if (tunnelConnecting) {
+            tunnelConnectBar.setIndeterminate(true);
+        }
         statusSharing.setText(sharing ? "Sharing is on" : "Sharing is off");
         statusSharing.setForeground(CrewcastTheme.TEXT);
         statusCardDot.setColor(sharing ? CrewcastTheme.SUCCESS : CrewcastTheme.STATUS_DOT_OFF);
@@ -1449,7 +1557,11 @@ public class MainFrame extends JFrame implements SharingUiListener {
         device.setForeground(CrewcastTheme.TEXT);
         String via = v.viaTunnel() ? "via tunnel" : "on Wi‑Fi";
         ElideLabel sub = new ElideLabel();
-        sub.setFullText(v.fileName() + " · " + via);
+        if (v.waitingProgress() != null) {
+            sub.setFullText("Waiting for " + v.fileName() + " · " + v.waitingProgress() + "% · " + via);
+        } else {
+            sub.setFullText(v.fileName() + " · " + via);
+        }
         sub.setFont(Fonts.ui(500, 12));
         sub.setForeground(CrewcastTheme.MUTED);
         JPanel text = new JPanel(new MigLayout("ins 0, gap 0", "[grow,fill]", "[]1[]"));
@@ -1794,7 +1906,66 @@ public class MainFrame extends JFrame implements SharingUiListener {
 
     @Override
     public void onCompatPrepChanged() {
-        SwingUtilities.invokeLater(this::reloadShareList);
+        SwingUtilities.invokeLater(this::requestCompatRefresh);
+    }
+
+    private void requestCompatRefresh() {
+        if (sharingService == null) {
+            return;
+        }
+        compatRefreshPending.set(true);
+        if (compatRefreshRunning.compareAndSet(false, true)) {
+            shareListLoader.execute(this::runCompatRefreshWorker);
+        }
+    }
+
+    private void runCompatRefreshWorker() {
+        try {
+            do {
+                compatRefreshPending.set(false);
+                if (shareListController.items().isEmpty()
+                        || shareListController.mode() != ShareListUiMode.NORMAL) {
+                    SwingUtilities.invokeLater(() -> reloadShareList(false));
+                    continue;
+                }
+                final List<ShareListItem> snapshot = shareListController.items();
+                List<ShareListItem> refreshed;
+                try {
+                    refreshed = sharingService.refreshCompatFieldsOnItems(snapshot);
+                } catch (Throwable ex) {
+                    LOG.log(Level.WARNING, "Compat-only share refresh failed", ex);
+                    refreshed = snapshot;
+                }
+                List<ShareListItem> finalRefreshed = refreshed;
+                try {
+                    SwingUtilities.invokeAndWait(
+                            () -> applyShareListUi(finalRefreshed, ShareListUiMode.NORMAL));
+                } catch (Exception ex) {
+                    LOG.log(Level.WARNING, "Compat UI apply failed", ex);
+                }
+            } while (compatRefreshPending.get());
+        } finally {
+            compatRefreshRunning.set(false);
+            if (compatRefreshPending.get()) {
+                if (compatRefreshRunning.compareAndSet(false, true)) {
+                    shareListLoader.execute(this::runCompatRefreshWorker);
+                }
+            }
+        }
+    }
+
+    private boolean isCompatEncoderAvailableForUi() {
+        if (sharingService == null) {
+            return false;
+        }
+        return sharingService.isCompatEncoderAvailable();
+    }
+
+    private Integer estimateCompatMinutesForUi(Path videoPath) {
+        if (sharingService == null) {
+            return null;
+        }
+        return sharingService.estimateCompatPrepareMinutes(videoPath);
     }
 
     /** Placeholder for mockup title-bar balance (80px). */

@@ -6,6 +6,7 @@ import com.solocrew.crewcast.system.CrewcastPaths;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
 import java.nio.file.Files;
@@ -27,13 +28,15 @@ public class FfmpegManager {
     }
 
     private final SettingsStore settingsStore;
+    private final Environment environment;
     private final List<Listener> listeners = new CopyOnWriteArrayList<>();
     private volatile Path ffmpegPath;
     private volatile Path ffprobePath;
     private volatile boolean available;
 
-    public FfmpegManager(SettingsStore settingsStore) {
+    public FfmpegManager(SettingsStore settingsStore, Environment environment) {
         this.settingsStore = settingsStore;
+        this.environment = environment;
     }
 
     @PostConstruct
@@ -137,9 +140,22 @@ public class FfmpegManager {
         return binary;
     }
 
-    private static boolean skipSystemSearch() {
+    private boolean skipSystemSearch() {
+        if (disableDiscovery()) {
+            return true;
+        }
         return Boolean.parseBoolean(System.getProperty("crewcast.ffmpeg.skipSystemSearch", "false"))
                 || Boolean.parseBoolean(System.getProperty("crewcast.ffmpeg.forceDownload", "false"));
+    }
+
+    private boolean disableDiscovery() {
+        if (Boolean.parseBoolean(System.getProperty("crewcast.ffmpeg.disable-discovery", "false"))) {
+            return true;
+        }
+        if (environment != null) {
+            return environment.getProperty("crewcast.ffmpeg.disable-discovery", Boolean.class, false);
+        }
+        return false;
     }
 
     private static boolean isWindows() {

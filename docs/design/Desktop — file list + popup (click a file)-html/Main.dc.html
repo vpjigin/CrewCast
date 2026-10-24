@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Crewcast file list</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0E1014}
+button{font-family:inherit}
+button:focus-visible{outline:2px solid #4FD1C5;outline-offset:2px}
+</style>
+</helmet>
+<div style="position: relative; min-height: 900px; box-sizing: border-box; background: #0E1014; color: #E8EAF0; font-family: 'DM Sans', system-ui, sans-serif; display: flex; flex-direction: column;">
+
+  <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 20px 32px; border-bottom: 1px solid #232833;">
+    <div style="display: flex; align-items: center; gap: 12px; flex-grow: 1;">
+      <div style="width: 36px; height: 36px; border-radius: 10px; background: #4FD1C5; display: flex; align-items: center; justify-content: center;">
+        <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l13-7.5z" fill="#06201D"></path></svg>
+      </div>
+      <div style="font-size: 18px; font-weight: 700; letter-spacing: -0.01em;">Crewcast</div>
+    </div>
+    <div style="font-size: 14px; color: #9AA3B2;">8 files shared</div>
+  </div>
+
+  <div style="width: 100%; max-width: 1200px; box-sizing: border-box; margin: 0 auto; padding: 40px 32px 64px; display: flex; flex-direction: column; gap: 28px;">
+    <div style="display: flex; flex-direction: column; gap: 6px;">
+      <div style="font-size: 13px; color: #9AA3B2; font-family: 'JetBrains Mono', monospace;">Shared folder</div>
+      <h1 style="margin: 0; font-size: 34px; font-weight: 700; letter-spacing: -0.02em;">Weekend Trip</h1>
+      <div style="font-size: 15px; color: #9AA3B2;">Tap any file to open it. Photos and videos can be viewed here; everything else can be downloaded.</div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 20px;">
+      <sc-for list="{{files}}" as="f" hint-placeholder-count="8">
+        <button onClick="{{ f.open }}" style="display: flex; flex-direction: column; text-align: left; padding: 0; background: #161920; border: 1px solid #262B36; border-radius: 14px; overflow: hidden; cursor: pointer; color: inherit;">
+          <div style="position: relative; height: 136px; display: flex; align-items: center; justify-content: center; background: {{f.bg}};">
+            <sc-if value="{{ f.isVideo }}" hint-placeholder-val="{{ false }}">
+              <div style="width: 48px; height: 48px; border-radius: 50%; background: rgba(8,10,14,0.55); display: flex; align-items: center; justify-content: center;">
+                <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="#FFFFFF"></path></svg>
+              </div>
+            </sc-if>
+            <sc-if value="{{ f.isOther }}" hint-placeholder-val="{{ false }}">
+              <div style="font-family: 'JetBrains Mono', monospace; font-size: 26px; letter-spacing: 0.04em; color: #9AA3B2;">{{f.ext}}</div>
+            </sc-if>
+            <div style="position: absolute; left: 10px; top: 10px; padding: 3px 9px; border-radius: 999px; background: rgba(8,10,14,0.62); color: #E8EAF0; font-size: 12px; font-weight: 600;">{{f.kind}}</div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 3px; padding: 14px 16px 16px;">
+            <div style="font-size: 15px; font-weight: 600; overflow-wrap: anywhere;">{{f.name}}</div>
+            <div style="font-size: 13px; color: #9AA3B2;">{{f.size}}</div>
+          </div>
+        </button>
+      </sc-for>
+    </div>
+  </div>
+
+  <sc-if value="{{ modalOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; left: 0; top: 0; right: 0; bottom: 0; display: flex; justify-content: center; align-items: flex-start; padding: 64px 16px; box-sizing: border-box;">
+      <button onClick="{{ close }}" aria-label="Close popup" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; padding: 0; border: 0; background: rgba(5,6,8,0.76); cursor: default;"></button>
+
+      <div role="dialog" aria-modal="true" aria-label="{{selName}}" style="position: relative; width: 100%; max-width: {{dialogMax}}; box-sizing: border-box; background: #161920; border: 1px solid #2A2F3A; border-radius: 18px; overflow: hidden; display: flex; flex-direction: column;">
+
+        <div style="display: flex; align-items: center; gap: 12px; padding: 16px 16px 16px 24px; border-bottom: 1px solid #262B36;">
+          <div style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;">
+            <div style="font-size: 17px; font-weight: 600; overflow-wrap: anywhere;">{{selName}}</div>
+            <div style="font-size: 13px; color: #9AA3B2;">{{selKind}} · {{selSize}} · {{selTime}}</div>
+          </div>
+          <button onClick="{{ close }}" aria-label="Close" style="width: 44px; height: 44px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: transparent; border: 0; border-radius: 10px; color: #E8EAF0; cursor: pointer;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+          </button>
+        </div>
+
+        <sc-if value="{{ showPreview }}" hint-placeholder-val="{{ false }}">
+          <div style="padding: 24px; display: flex; flex-direction: column; gap: 16px;">
+            <div style="position: relative; width: 100%; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; display: flex; align-items: center; justify-content: center; background: {{selBg}};">
+              <sc-if value="{{ selIsVideo }}" hint-placeholder-val="{{ false }}">
+                <div style="width: 64px; height: 64px; border-radius: 50%; background: rgba(8,10,14,0.55); display: flex; align-items: center; justify-content: center;">
+                  <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="#FFFFFF"></path></svg>
+                </div>
+              </sc-if>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ showViewer }}" hint-placeholder-val="{{ false }}">
+          <div style="padding: 24px; display: flex; flex-direction: column; gap: 0;">
+            <div style="position: relative; width: 100%; aspect-ratio: 16 / 9; border-radius: 12px 12px 0 0; overflow: hidden; background: {{selBg}};">
+              <sc-if value="{{ selIsImage }}" hint-placeholder-val="{{ false }}">
+                <div style="position: absolute; right: 14%; top: 16%; width: 88px; height: 88px; border-radius: 50%; background: rgba(255,236,200,0.92);"></div>
+                <div style="position: absolute; left: -6%; bottom: -34%; width: 70%; height: 70%; border-radius: 50%; background: #1B1938;"></div>
+                <div style="position: absolute; right: -10%; bottom: -42%; width: 70%; height: 74%; border-radius: 50%; background: #25214A;"></div>
+              </sc-if>
+            </div>
+            <sc-if value="{{ selIsVideo }}" hint-placeholder-val="{{ false }}">
+              <div style="display: flex; align-items: center; gap: 14px; padding: 12px 16px; background: #0B0D11; border-radius: 0 0 12px 12px;">
+                <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h4v14H6zM14 5h4v14h-4z" fill="#E8EAF0"></path></svg>
+                <div style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #9AA3B2;">00:42</div>
+                <div style="position: relative; flex-grow: 1; height: 4px; border-radius: 2px; background: #2A2F3A;">
+                  <div style="position: absolute; left: 0; top: 0; width: 22%; height: 4px; border-radius: 2px; background: #4FD1C5;"></div>
+                </div>
+                <div style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #9AA3B2;">01:58:20</div>
+              </div>
+            </sc-if>
+            <sc-if value="{{ selIsImage }}" hint-placeholder-val="{{ false }}">
+              <div style="height: 12px; background: #0B0D11; border-radius: 0 0 12px 12px;"></div>
+            </sc-if>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ noPreview }}" hint-placeholder-val="{{ false }}">
+          <div style="padding: 32px 24px; display: flex; flex-wrap: wrap; align-items: center; gap: 24px;">
+            <div style="width: 96px; height: 96px; flex-shrink: 0; border-radius: 16px; background: #1E222B; border: 1px solid #2A2F3A; display: flex; align-items: center; justify-content: center; font-family: 'JetBrains Mono', monospace; font-size: 22px; letter-spacing: 0.04em; color: #9AA3B2;">{{selExt}}</div>
+            <div style="flex: 1 1 260px; display: flex; flex-direction: column; gap: 6px;">
+              <div style="font-size: 16px; font-weight: 600;">No preview for this file type</div>
+              <div style="font-size: 14px; line-height: 1.5; color: #9AA3B2;">Download it to open it on your device.</div>
+            </div>
+          </div>
+        </sc-if>
+
+        <div style="display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 12px; padding: 16px 24px 24px;">
+          <sc-if value="{{ showBack }}" hint-placeholder-val="{{ false }}">
+            <button onClick="{{ back }}" style="min-height: 44px; padding: 0 20px; background: transparent; border: 1px solid #2A2F3A; border-radius: 10px; color: #E8EAF0; font-size: 15px; font-weight: 600; cursor: pointer;">Back</button>
+          </sc-if>
+          <sc-if value="{{ showViewBtn }}" hint-placeholder-val="{{ false }}">
+            <button onClick="{{ startView }}" style="min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 20px; background: transparent; border: 1px solid #3A4150; border-radius: 10px; color: #E8EAF0; font-size: 15px; font-weight: 600; cursor: pointer;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+              View
+            </button>
+          </sc-if>
+          <button onClick="{{ download }}" style="min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 22px; background: #4FD1C5; border: 0; border-radius: 10px; color: #06201D; font-size: 15px; font-weight: 700; cursor: pointer;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"></path></svg>
+            Download
+          </button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ hasToast }}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; left: 0; right: 0; bottom: 32px; display: flex; justify-content: center; padding: 0 16px; pointer-events: none;">
+      <div style="padding: 12px 20px; background: #E8EAF0; color: #0E1014; border-radius: 10px; font-size: 14px; font-weight: 600;">{{toast}}</div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { sel: null, viewing: false, toast: '' };
+  }
+  renderVals() {
+    const vid = 'linear-gradient(135deg,#2B3A67,#6A4C93)';
+    const img = 'linear-gradient(160deg,#F2994A,#BB4E75 55%,#2D2A55)';
+    const oth = '#1E222B';
+    const raw = [
+      { id: 1, name: 'Weekend.Trip.2026.mkv', ext: 'MKV', kind: 'Video', size: '1.8 GB', time: 'Today, 4:12 PM', bg: vid },
+      { id: 2, name: 'Goa-sunset.jpg', ext: 'JPG', kind: 'Image', size: '4.2 MB', time: 'Today, 4:20 PM', bg: img },
+      { id: 3, name: 'Birthday-clip.mp4', ext: 'MP4', kind: 'Video', size: '212 MB', time: 'Yesterday', bg: 'linear-gradient(135deg,#1F5F5B,#3A8D7A)' },
+      { id: 4, name: 'Family-photo.png', ext: 'PNG', kind: 'Image', size: '6.8 MB', time: 'Yesterday', bg: 'linear-gradient(160deg,#4B6CB7,#182848)' },
+      { id: 5, name: 'Trip-itinerary.pdf', ext: 'PDF', kind: 'Document', size: '380 KB', time: 'Mon', bg: oth },
+      { id: 6, name: 'Expenses.xlsx', ext: 'XLSX', kind: 'Spreadsheet', size: '96 KB', time: 'Mon', bg: oth },
+      { id: 7, name: 'Photos-backup.zip', ext: 'ZIP', kind: 'Archive', size: '640 MB', time: 'Sun', bg: oth },
+      { id: 8, name: 'Voice-note.m4a', ext: 'M4A', kind: 'Audio', size: '3.1 MB', time: 'Sun', bg: oth }
+    ].map((f) => ({
+      ...f,
+      isVideo: f.kind === 'Video',
+      isImage: f.kind === 'Image',
+      isOther: f.kind !== 'Video' && f.kind !== 'Image'
+    }));
+    const files = raw.map((f) => ({ ...f, open: () => this.setState({ sel: f.id, viewing: false }) }));
+    const sel = raw.find((f) => f.id === this.state.sel) || null;
+    const canView = !!sel && (sel.isVideo || sel.isImage);
+    const viewing = !!sel && canView && this.state.viewing;
+    return {
+      files,
+      modalOpen: !!sel,
+      selName: sel ? sel.name : '',
+      selExt: sel ? sel.ext : '',
+      selKind: sel ? sel.kind : '',
+      selSize: sel ? sel.size : '',
+      selTime: sel ? sel.time : '',
+      selBg: sel ? sel.bg : '',
+      selIsVideo: !!sel && sel.isVideo,
+      selIsImage: !!sel && sel.isImage,
+      dialogMax: viewing ? '980px' : '560px',
+      showPreview: canView && !viewing,
+      showViewer: viewing,
+      noPreview: !!sel && !canView,
+      showViewBtn: canView && !viewing,
+      showBack: viewing,
+      close: () => this.setState({ sel: null, viewing: false }),
+      startView: () => this.setState({ viewing: true }),
+      back: () => this.setState({ viewing: false }),
+      download: () => {
+        this.setState({ toast: 'Download started: ' + (sel ? sel.name : '') });
+        clearTimeout(this._t);
+        this._t = setTimeout(() => this.setState({ toast: '' }), 2400);
+      },
+      hasToast: !!this.state.toast,
+      toast: this.state.toast
+    };
+  }
+}
+</script>
+</body>
+</html>

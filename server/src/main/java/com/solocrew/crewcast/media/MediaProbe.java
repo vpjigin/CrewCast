@@ -28,6 +28,7 @@ public final class MediaProbe {
         List<String> cmd = List.of(
                 ffprobeBinary.toString(),
                 "-v", "error",
+                "-show_format",
                 "-show_streams",
                 "-print_format", "json",
                 file.toAbsolutePath().toString());
@@ -118,8 +119,28 @@ public final class MediaProbe {
         }
 
         boolean hevcWarning = isHevcCodec(mainVideoCodec);
+        long formatBitRate = 0;
+        double formatDurationSec = 0;
+        JsonNode format = root.get("format");
+        if (format != null) {
+            formatBitRate = format.path("bit_rate").asLong(0);
+            String dur = format.path("duration").asText("");
+            if (!dur.isBlank()) {
+                try {
+                    formatDurationSec = Double.parseDouble(dur.trim());
+                } catch (NumberFormatException ignored) {
+                }
+            }
+        }
         return new ProbedMedia(
-                mainVideoIndex, mainVideoCodec, hevcWarning, List.copyOf(audio), List.copyOf(subtitles), videoFormat);
+                mainVideoIndex,
+                mainVideoCodec,
+                hevcWarning,
+                List.copyOf(audio),
+                List.copyOf(subtitles),
+                videoFormat,
+                formatBitRate,
+                formatDurationSec);
     }
 
     static VideoFormat parseVideoFormat(JsonNode stream) {
