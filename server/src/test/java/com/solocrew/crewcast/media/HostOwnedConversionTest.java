@@ -75,13 +75,12 @@ class HostOwnedConversionTest extends CrewcastSpringTestBase {
         Path running = base.resolve("running.mkv");
         Files.writeString(running, "r");
         registerProbe(running);
-        compatFixService.testEnqueue(running, media, 0, true, "A");
-        compatFixService.testSetJobState(running, 0, AudioFixJobState.RUNNING);
+        compatFixService.testInstallViewerJob(running, media, 0, AudioFixJobState.RUNNING, "A");
         for (int i = 0; i < 3; i++) {
             Path file = base.resolve("w" + i + ".mkv");
             Files.writeString(file, "a");
             registerProbe(file);
-            compatFixService.testEnqueue(file, media, 0, true, "Viewer " + i);
+            compatFixService.testInstallViewerJob(file, media, 0, AudioFixJobState.QUEUED, "Viewer " + i);
         }
         assertEquals(3, compatFixService.viewerQueuedCount());
         Path extra = base.resolve("w4.mkv");
@@ -100,7 +99,7 @@ class HostOwnedConversionTest extends CrewcastSpringTestBase {
             Path file = base.resolve("q" + i + ".mkv");
             Files.writeString(file, "a");
             registerProbe(file);
-            compatFixService.testEnqueue(file, media, 0, true, "Viewer " + i);
+            compatFixService.testInstallViewerJob(file, media, 0, AudioFixJobState.QUEUED, "Viewer " + i);
         }
         assertEquals(3, compatFixService.viewerQueuedCount());
         Path extra = base.resolve("q4.mkv");

@@ -753,6 +753,23 @@ public class CompatFixService {
         enqueue(source, media, audioIndex, viewerInitiated, !viewerInitiated, viewerLabel, null);
     }
 
+    /** Package tests: viewer job without submitting the worker (no stub ffmpeg execution). */
+    void testInstallViewerJob(
+            Path source, ProbedMedia media, int audioIndex, AudioFixJobState state, String viewerLabel)
+            throws IOException {
+        String key = jobKey(source, audioIndex, media);
+        Job job = jobs.computeIfAbsent(key, k -> new Job(source, audioIndex, media));
+        job.state = state;
+        job.startedBy = ConversionStartedBy.VIEWER;
+        job.startedByLabel = viewerLabel;
+        job.viewerInitiated = true;
+        job.hostInitiated = false;
+        job.message = state == AudioFixJobState.QUEUED ? "Queued" : "Preparing compatible version…";
+        if (state == AudioFixJobState.QUEUED) {
+            job.enqueuedAt = System.nanoTime();
+        }
+    }
+
     /** Package tests: set job state without starting the worker (no ffmpeg). */
     void testInstallJob(Path source, ProbedMedia media, int audioIndex, AudioFixJobState state, int progress)
             throws IOException {
@@ -839,6 +856,17 @@ public class CompatFixService {
             return jobKey(job.source, job.audioIndex, job.media);
         } catch (IOException e) {
             return "";
+        }
+    }
+
+    /** Tests: wait until the worker queue is drained (bounded). */
+    public void awaitWorkerIdle(long timeout, TimeUnit unit) throws InterruptedException {
+        try {
+            worker.submit(() -> {}).get(timeout, unit);
+        } catch (java.util.concurrent.ExecutionException ex) {
+            throw new IllegalStateException("compat worker failed while idling", ex.getCause());
+        } catch (java.util.concurrent.TimeoutException ex) {
+            throw new IllegalStateException("compat worker did not idle within " + timeout + " " + unit, ex);
         }
     }
 
