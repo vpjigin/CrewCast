@@ -1,4 +1,5 @@
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
 html,body{width:100%;height:100%;overflow:hidden;background:#000;color:#fff;
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
 #player{position:fixed;inset:0;background:#000;touch-action:manipulation}
@@ -66,7 +67,11 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;color:#fff;
 #audio-prep-overlay{position:absolute;inset:0;z-index:15;display:flex;flex-direction:column;gap:16px;
   align-items:center;justify-content:center;background:rgba(0,0,0,.72);pointer-events:auto}
 #audio-prep-overlay[hidden]{display:none!important}
-#audio-prep-text{font-size:16px;text-align:center;padding:0 24px;pointer-events:none}
+#audio-prep-text{font-size:16px;text-align:center;padding:0 24px;max-width:420px;line-height:1.45}
+.conv-subtext{font-size:13px;color:#a9b2c0;text-align:center;padding:0 24px;max-width:420px;line-height:1.45;white-space:pre-line}
+.conv-progress-wrap{width:min(320px,80vw);height:8px;border-radius:999px;background:rgba(255,255,255,.15);overflow:hidden}
+.conv-progress-bar{height:100%;background:linear-gradient(90deg,#34d399,#6ee7b7);transition:width .4s ease}
+.conv-start,.conv-ready-play,.conv-download{pointer-events:auto;font-size:14px;padding:8px 16px;text-decoration:none}
 #audio-prep-cancel.prep-cancel{pointer-events:auto;font-size:14px;padding:0 16px}
 #btn-chapters{gap:6px;font-size:14px;padding:0 10px}
 #btn-chapters svg{width:20px;height:20px;flex-shrink:0}

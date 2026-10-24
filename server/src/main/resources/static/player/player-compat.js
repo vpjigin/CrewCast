@@ -9,8 +9,11 @@
   var risky = false;
   var autoRetriedAfterError = false;
   var videoId = null;
+  var pageVisible = typeof document !== 'undefined' ? document.visibilityState !== 'hidden' : true;
+  var autoCompatEnabled = false;
+  var activePollImmediate = null;
 
-  var PREP_PREFIX = 'Preparing a compatible version for this device…';
+  var PREP_PREFIX = 'Converting on the host\'s laptop';
 
   var TV_UA = /smart-tv|smarttv|tizen|web0s|webos|hbbtv|netcast|viera|bravia|philipstv|appletv|googletv|android tv|crkey|aft|silk\/|roku|dlnadoc|tv safari|\stv\b/i;
 
@@ -125,24 +128,121 @@
     return false;
   }
 
-  function prepMessage(progress){
-    if (progress != null && progress > 0) {
-      return PREP_PREFIX + ' ' + progress + '%';
-    }
-    return PREP_PREFIX;
+  function etaText(etaSeconds){
+    if (etaSeconds == null || etaSeconds <= 0) return '';
+    var min = Math.max(1, Math.round(etaSeconds / 60));
+    return 'About ' + min + ' min left';
   }
 
-  function pollCompat(id, audioIdx, withToken, fetchOpts, showPrep, onReady, onFail){
-    var statusUrl = withToken('/api/videos/' + encodeURIComponent(id) + '/compat-status?audio=' + audioIdx);
+  function clientId(){
+    var k = 'crewcast-client-id';
+    try {
+      var id = sessionStorage.getItem(k);
+      if (!id) {
+        id = 'c-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+        sessionStorage.setItem(k, id);
+      }
+      return id;
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function withClientId(path){
+    var id = clientId();
+    if (!id) return path;
+    return path + (path.indexOf('?') >= 0 ? '&' : '?') + 'clientId=' + encodeURIComponent(id);
+  }
+
+  function startedByLine(st){
+    if (!st || !st.startedBy) return '';
+    if (st.startedBy === 'SELF') return '';
+    if (st.startedBy === 'HOST') return 'Started by the host';
+    if (st.startedBy === 'VIEWER') return 'Started by another viewer';
+    return '';
+  }
+
+  function originalDownloadHref(id, withToken){
+    var url = '/file/' + encodeURIComponent(id) + '?download=1';
+    return withToken(url);
+  }
+
+  function setupConversionChrome(id, withToken){
+    var dl = document.getElementById('conv-download-original');
+    if (dl) {
+      dl.href = originalDownloadHref(id, withToken);
+    }
+  }
+
+  function renderConversionUi(st, opts){
+    var main = document.getElementById('audio-prep-text');
+    var sub = document.getElementById('conv-subtext');
+    var barWrap = document.getElementById('conv-progress-wrap');
+    var bar = document.getElementById('conv-progress-bar');
+    var startBtn = document.getElementById('conv-start-btn');
+    var readyBtn = document.getElementById('conv-ready-play');
+    var dl = document.getElementById('conv-download-original');
+    var prepCancel = document.getElementById('audio-prep-cancel');
+    if (!main) return;
+    var status = st && st.status ? String(st.status).toUpperCase() : '';
+    var pct = st && st.progress != null ? st.progress : 0;
+    if (startBtn) startBtn.hidden = true;
+    if (readyBtn) readyBtn.hidden = true;
+    if (dl) dl.hidden = true;
+    if (barWrap) barWrap.hidden = true;
+    if (sub) sub.hidden = true;
+    if (prepCancel) prepCancel.hidden = true;
+    if (opts && opts.askHost) {
+      main.textContent = 'Ask the host to convert this';
+      if (sub) { sub.textContent = 'The host has not prepared a compatible version yet.'; sub.hidden = false; }
+      if (dl) dl.hidden = false;
+      return;
+    }
+    if (opts && opts.promptStart) {
+      main.textContent = 'This video needs converting before it plays on phones and TVs';
+      if (sub) {
+        sub.textContent = 'Runs on the host\'s laptop, not your phone – you can leave and come back.';
+        sub.hidden = false;
+      }
+      if (startBtn) startBtn.hidden = false;
+      if (dl) dl.hidden = false;
+      return;
+    }
+    if (status === 'READY') {
+      main.textContent = 'Compatible version ready';
+      if (readyBtn && !pageVisible) readyBtn.hidden = false;
+      return;
+    }
+    if (status === 'QUEUED' || status === 'RUNNING') {
+      main.textContent = PREP_PREFIX + ' · ' + pct + '%';
+      if (barWrap) barWrap.hidden = false;
+      if (bar) bar.style.width = Math.min(100, pct) + '%';
+      var lines = ['It keeps going if you lock your phone or close this page.'];
+      var eta = etaText(st.etaSeconds);
+      if (eta) lines.unshift(eta);
+      var by = startedByLine(st);
+      if (by) lines.push(by);
+      if (sub) { sub.textContent = lines.join('\n'); sub.hidden = false; }
+      if (dl) dl.hidden = false;
+    }
+  }
+
+  function pollCompat(id, audioIdx, withToken, fetchOpts, onTick, onReady, onFail){
+    var statusUrl = withClientId(withToken('/api/videos/' + encodeURIComponent(id) + '/compat-status?audio=' + audioIdx));
     var stopped = false;
+    var timer = null;
     function tick(){
       if (stopped) return;
+      if (!pageVisible) {
+        timer = setTimeout(tick, 2000);
+        return;
+      }
       fetch(statusUrl, fetchOpts())
         .then(function(r){ return r.json(); })
         .then(function(st){
           if (st.status === 'READY') {
             stopped = true;
-            onReady();
+            onReady(st);
             return;
           }
           if (st.status === 'FAILED') {
@@ -150,17 +250,22 @@
             if (onFail) onFail(st);
             return;
           }
-          showPrep(st.progress, prepMessage(st.progress));
-          setTimeout(tick, 2000);
+          if (onTick) onTick(st);
+          timer = setTimeout(tick, 2000);
         })
-        .catch(function(){ setTimeout(tick, 2000); });
+        .catch(function(){ timer = setTimeout(tick, 2000); });
     }
+    activePollImmediate = tick;
     tick();
-    return function(){ stopped = true; };
+    return function(){
+      stopped = true;
+      activePollImmediate = null;
+      if (timer) clearTimeout(timer);
+    };
   }
 
   function postCompatPrepare(id, audioIdx, withToken, fetchOpts){
-    return fetch(withToken('/api/videos/' + encodeURIComponent(id) + '/compat/prepare?audio=' + audioIdx),
+    return fetch(withClientId(withToken('/api/videos/' + encodeURIComponent(id) + '/compat/prepare?audio=' + audioIdx)),
       fetchOpts('POST')).then(function(r){ return r.json(); });
   }
 
@@ -181,6 +286,67 @@
     if (opts && opts.onToggle) opts.onToggle(on);
   }
 
+  function beginConversion(id, audioIdx, ctx, autoPlayOnReady){
+    setupConversionChrome(id, ctx.withToken);
+    function go(st){
+      renderConversionUi(st || { status: 'READY', progress: 100 }, {});
+      if (pageVisible && autoPlayOnReady !== false) {
+        ctx.startPlayback();
+      } else {
+        var readyBtn = document.getElementById('conv-ready-play');
+        if (readyBtn) {
+          readyBtn.hidden = false;
+          readyBtn.onclick = function(){ ctx.startPlayback(); readyBtn.hidden = true; };
+        }
+      }
+    }
+    function onTick(st){
+      ctx.showPrep(st.progress, PREP_PREFIX + ' · ' + st.progress + '%');
+      renderConversionUi(st, {});
+    }
+    function pollOnly(){
+      onTick({ status: 'RUNNING', progress: 0 });
+      stopCompatPoll = pollCompat(id, audioIdx, ctx.withToken, ctx.fetchOpts, onTick, go, ctx.onFail);
+    }
+    if (hostCompatState === 'READY') {
+      go();
+      return;
+    }
+    if (hostCompatState === 'QUEUED' || hostCompatState === 'CONVERTING') {
+      pollOnly();
+      return;
+    }
+    if (!viewerMayPrepare) {
+      renderConversionUi(null, { askHost: true });
+      ctx.showPrep(0, 'Ask the host to convert this');
+      if (ctx.onFail) ctx.onFail({ message: compatUnavailableMessage() });
+      return;
+    }
+    if (!encoderAvailable && risky) {
+      if (ctx.onFail) ctx.onFail({ message: compatUnavailableMessage() });
+      return;
+    }
+    postCompatPrepare(id, audioIdx, ctx.withToken, ctx.fetchOpts).then(function(st){
+      if (st.status === 'READY') {
+        go(st);
+        return;
+      }
+      if (st.status === 'FAILED') {
+        if (ctx.onFail) ctx.onFail(st);
+        return;
+      }
+      onTick(st);
+      stopCompatPoll = pollCompat(id, audioIdx, ctx.withToken, ctx.fetchOpts, onTick, go, ctx.onFail);
+    }).catch(function(){
+      if (ctx.onFail) ctx.onFail({ message: 'Could not start compatibility conversion' });
+    });
+  }
+
+  document.addEventListener('visibilitychange', function(){
+    pageVisible = document.visibilityState !== 'hidden';
+    if (pageVisible && activePollImmediate) activePollImmediate();
+  });
+
   window.__crewcastCompat = {
     isActive: function(){ return compatEnabled; },
     streamExtras: function(){
@@ -191,78 +357,52 @@
       if (!compatEnabled) return false;
       if (stopCompatPoll) { stopCompatPoll(); stopCompatPoll = null; }
       var id = ctx.id;
-      function go(){
-        ctx.startPlayback();
-      }
-      function pollOnly(){
-        ctx.showPrep(0, prepMessage(0));
-        stopCompatPoll = pollCompat(id, idx, ctx.withToken, ctx.fetchOpts, ctx.showPrep, go, ctx.onFail);
+      setupConversionChrome(id, ctx.withToken);
+      var startBtn = document.getElementById('conv-start-btn');
+      function run(auto){
+        if (startBtn) startBtn.hidden = true;
+        beginConversion(id, idx, ctx, auto);
       }
       if (hostCompatState === 'READY') {
-        go();
+        run(true);
         return true;
       }
       if (hostCompatState === 'QUEUED' || hostCompatState === 'CONVERTING') {
-        pollOnly();
+        run(false);
         return true;
       }
       if (!viewerMayPrepare) {
-        if (ctx.onFail) ctx.onFail({ message: compatUnavailableMessage() });
+        renderConversionUi(null, { askHost: true });
+        ctx.showPrep(0, 'Ask the host to convert this');
         return true;
       }
       if (!encoderAvailable && risky) {
         if (ctx.onFail) ctx.onFail({ message: compatUnavailableMessage() });
         return true;
       }
-      postCompatPrepare(id, idx, ctx.withToken, ctx.fetchOpts).then(function(st){
-        if (st.status === 'READY') {
-          go();
-          return;
-        }
-        if (st.status === 'FAILED') {
-          if (ctx.onFail) ctx.onFail(st);
-          return;
-        }
-        ctx.showPrep(st.progress || 0, prepMessage(st.progress));
-        stopCompatPoll = pollCompat(id, idx, ctx.withToken, ctx.fetchOpts, ctx.showPrep, go, ctx.onFail);
-      }).catch(function(){
-        if (ctx.onFail) ctx.onFail({ message: 'Could not start compatibility conversion' });
-      });
+      if (autoCompatEnabled) {
+        run(true);
+        return true;
+      }
+      renderConversionUi(null, { promptStart: true });
+      ctx.showPrep(0, 'This video needs converting before it plays on phones and TVs');
+      if (startBtn) {
+        startBtn.hidden = false;
+        startBtn.onclick = function(){ run(true); };
+      }
       return true;
     },
     prepareForSwitch: function(idx, ctx){
       if (!compatEnabled) return false;
       if (stopCompatPoll) { stopCompatPoll(); stopCompatPoll = null; }
-      function pollOnly(){
-        ctx.showPrep(0, prepMessage(0));
-        stopCompatPoll = pollCompat(ctx.id, idx, ctx.withToken, ctx.fetchOpts, ctx.showPrep, ctx.onReady, ctx.onFailed);
-      }
-      if (!viewerMayPrepare && hostCompatState !== 'READY') {
-        if (ctx.onFailed) ctx.onFailed({ message: compatUnavailableMessage() });
-        return true;
-      }
-      if (!encoderAvailable && risky) {
-        if (ctx.onFailed) ctx.onFailed({ message: compatUnavailableMessage() });
-        return true;
-      }
-      if (!viewerMayPrepare) {
-        pollOnly();
-        return true;
-      }
-      postCompatPrepare(ctx.id, idx, ctx.withToken, ctx.fetchOpts).then(function(st){
-        if (st.status === 'READY') {
-          ctx.onReady();
-          return;
-        }
-        if (st.status === 'FAILED') {
-          ctx.onFailed(st);
-          return;
-        }
-        ctx.showPrep(st.progress || 0, prepMessage(st.progress));
-        stopCompatPoll = pollCompat(ctx.id, idx, ctx.withToken, ctx.fetchOpts, ctx.showPrep, ctx.onReady, ctx.onFailed);
-      }).catch(function(){
-        ctx.onFailed({ message: 'Could not reach the server for compatibility conversion' });
-      });
+      beginConversion(ctx.id, idx, {
+        id: ctx.id,
+        withToken: ctx.withToken,
+        fetchOpts: ctx.fetchOpts,
+        showPrep: ctx.showPrep,
+        startPlayback: ctx.onReady,
+        onFail: ctx.onFailed
+      }, true);
       return true;
     },
     canAutoEnableAfterError: function(){
@@ -315,12 +455,14 @@
         else if (globalPref === '1') compatEnabled = true;
         else if (globalPref === '0') compatEnabled = false;
         else compatEnabled = shouldAutoEnable(data, decode, mcMain10, id);
+        autoCompatEnabled = compatEnabled;
 
         if (toggle) {
           toggle.checked = compatEnabled;
           toggle.disabled = !encoderAvailable;
           toggle.addEventListener('change', function(){
             userChangedThisVideo = true;
+            autoCompatEnabled = false;
             compatEnabled = toggle.checked;
             writeLs(lsVideoKey(id), compatEnabled ? '1' : '0');
             writeLs(lsGlobalKey(), compatEnabled ? '1' : '0');

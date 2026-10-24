@@ -1,6 +1,9 @@
 package com.solocrew.crewcast.support;
 
+import com.solocrew.crewcast.media.FfmpegManager;
 import com.solocrew.crewcast.system.CrewcastWriteGuard;
+import org.junit.jupiter.api.BeforeEach;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
@@ -17,6 +20,7 @@ public abstract class CrewcastSpringTestBase {
         try {
             ISOLATED_HOME = Files.createTempDirectory("crewcast-test-home");
             System.setProperty("crewcast.home", ISOLATED_HOME.toString());
+            FfmpegTestBinaries.installStubTools(ISOLATED_HOME);
             CrewcastWriteGuard.setEnabled(true);
         } catch (IOException e) {
             throw new ExceptionInInitializerError(e);
@@ -26,9 +30,22 @@ public abstract class CrewcastSpringTestBase {
     @DynamicPropertySource
     static void crewcastHome(DynamicPropertyRegistry registry) {
         registry.add("crewcast.home", () -> ISOLATED_HOME.toString());
+        registry.add("crewcast.ffmpeg.disable-discovery", () -> "true");
     }
 
     public static Path isolatedHome() {
         return ISOLATED_HOME;
+    }
+
+    @Autowired(required = false)
+    protected FfmpegManager ffmpegManager;
+
+    @BeforeEach
+    void pinIsolatedHomeAndStubFfmpeg() throws IOException {
+        System.setProperty("crewcast.home", ISOLATED_HOME.toString());
+        FfmpegTestBinaries.installStubTools(ISOLATED_HOME);
+        if (ffmpegManager != null) {
+            ffmpegManager.recheck();
+        }
     }
 }

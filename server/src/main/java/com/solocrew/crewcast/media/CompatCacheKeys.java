@@ -12,11 +12,13 @@ final class CompatCacheKeys {
     private CompatCacheKeys() {
     }
 
+    /** Cache identity depends on source identity + transcode policy, not the computed bitrate. */
     static String cacheFileName(Path source, int audioIndex, int maxHeight) throws IOException {
         long mtime = Files.getLastModifiedTime(source).toMillis();
         long size = Files.size(source);
         String raw = source.toAbsolutePath().normalize()
-                + "|" + mtime + "|" + size + "|" + audioIndex + "|compat-h264-" + maxHeight;
+                + "|" + mtime + "|" + size + "|" + audioIndex + "|compat-h264-" + maxHeight
+                + "|" + CompatVideoBitrate.CACHE_POLICY_TAG;
         return "compat-" + sha256(raw) + ".mp4";
     }
 

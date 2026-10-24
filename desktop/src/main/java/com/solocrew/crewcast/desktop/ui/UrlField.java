@@ -82,6 +82,10 @@ public class UrlField extends JTextField {
         int w = getWidth() > 0 ? Math.max(0, getWidth() - 20 - FitLabel.WIDTH_SAFETY * 2) : Integer.MAX_VALUE;
         if (TextPaint.stringWidth(f, fullText) + FitLabel.WIDTH_SAFETY <= w) {
             setText(fullText);
+            scrollUrlStart();
+            return;
+        }
+        if (w <= 0) {
             return;
         }
         String ell = "…";
@@ -89,9 +93,16 @@ public class UrlField extends JTextField {
             String s = fullText.substring(0, i) + ell;
             if (TextPaint.stringWidth(f, s) + FitLabel.WIDTH_SAFETY <= w) {
                 setText(s);
+                scrollUrlStart();
                 return;
             }
         }
         setText(ell);
+        scrollUrlStart();
+    }
+
+    private void scrollUrlStart() {
+        setCaretPosition(0);
+        moveCaretPosition(0);
     }
 }

@@ -6,7 +6,7 @@ import com.solocrew.crewcast.access.SharingState;
 import com.solocrew.crewcast.settings.AppSettings;
 import com.solocrew.crewcast.settings.SettingsStore;
 import com.solocrew.crewcast.share.ShareRegistry;
-import com.solocrew.crewcast.support.CrewcastSpringTestBase;
+import com.solocrew.crewcast.support.E2eSpringTestBase;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,7 +34,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest(properties = "server.port=0")
 @AutoConfigureMockMvc
 @E2eFfmpegRequired
-class CompatConversionE2eTest extends CrewcastSpringTestBase {
+class CompatConversionE2eTest extends E2eSpringTestBase {
 
     private static Path fixture;
     private static String videoId;

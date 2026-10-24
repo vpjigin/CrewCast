@@ -11,5 +11,10 @@ public record ShareVideoCompatRow(
         int progress,
         String tooltip,
         boolean canPrepare,
-        boolean canCancel) {
+        boolean canCancel,
+        int queueAhead,
+        Double speed,
+        Integer etaSeconds,
+        com.solocrew.crewcast.media.ConversionStartedBy startedBy,
+        String startedByLabel) {
 }
