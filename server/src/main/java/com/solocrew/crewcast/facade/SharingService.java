@@ -1,8 +1,11 @@
 package com.solocrew.crewcast.facade;
 
+import com.solocrew.crewcast.media.AudioFixJobState;
 import com.solocrew.crewcast.media.AudioFixService;
+import com.solocrew.crewcast.media.AudioFixStatus;
 import com.solocrew.crewcast.media.CompatFixService;
 import com.solocrew.crewcast.media.CompatUiState;
+import com.solocrew.crewcast.share.VideoFile;
 import com.solocrew.crewcast.media.FfmpegDownloadAssets;
 import com.solocrew.crewcast.media.FfmpegDownloadListener;
 import com.solocrew.crewcast.media.FfmpegDownloader;
@@ -37,7 +40,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 @Service
@@ -276,6 +281,19 @@ public class SharingService implements CloudflaredListener, FfmpegDownloadListen
         compatFixService.cancelForVideo(videoPath);
     }
 
+    public ConversionQueueSummary conversionQueueSummary() throws IOException {
+        return new ConversionQueueSummary(
+                compatFixService.countRunningJobs(),
+                compatFixService.countQueuedJobs(),
+                compatFixService.countVideosNeedingConversion());
+    }
+
+    public void prepareAllNeedingCompat() throws Exception {
+        for (ShareEntry e : shareRegistry.listShareEntries()) {
+            prepareCompatForShareEntry(e);
+        }
+    }
+
     public List<ShareListItem> listShares() {
         List<ShareEntry> entries = shareRegistry.listShareEntries();
         List<ShareListItem> out = new ArrayList<>();
@@ -288,13 +306,24 @@ public class SharingService implements CloudflaredListener, FfmpegDownloadListen
             String fileTooltip = "";
             boolean canPrepare = false;
             boolean canCancel = false;
+            int fileQueueAhead = 0;
+            Double fileSpeed = null;
+            Integer fileEta = null;
+            com.solocrew.crewcast.media.ConversionStartedBy fileStartedBy = null;
+            String fileStartedByLabel = null;
             List<ShareVideoCompatRow> folderVideos = List.of();
             try {
                 if (e.getKind() == ShareEntry.Kind.FILE && ShareRegistry.isVideoFileName(Path.of(e.getPath()).getFileName().toString())) {
                     Path vp = Path.of(e.getPath());
                     fileState = compatFixService.uiStateForDefaultTrack(vp);
                     fileTooltip = compatFixService.tooltipForDefaultTrack(vp);
-                    fileProgress = compatProgressFor(vp);
+                    AudioFixStatus job = compatJobStatus(vp);
+                    fileProgress = job.progress();
+                    fileQueueAhead = job.queueAhead() != null ? job.queueAhead() : 0;
+                    fileSpeed = job.speed();
+                    fileEta = job.etaSeconds();
+                    fileStartedBy = job.startedBy();
+                    fileStartedByLabel = job.startedByLabel();
                     canPrepare = canPrepareCompat(fileState, compatFixService.isAvailable());
                     canCancel = canCancelCompat(fileState);
                 } else if (e.getKind() == ShareEntry.Kind.FOLDER) {
@@ -317,9 +346,20 @@ public class SharingService implements CloudflaredListener, FfmpegDownloadListen
                     fileTooltip,
                     canPrepare,
                     canCancel,
+                    fileQueueAhead,
+                    fileSpeed,
+                    fileEta,
+                    fileStartedBy,
+                    fileStartedByLabel,
                     folderVideos));
         }
         return out;
+    }
+
+    private AudioFixStatus compatJobStatus(Path video) throws Exception {
+        var media = audioFixService.probe(video);
+        int audio = audioFixService.defaultAudioIndex(media);
+        return compatFixService.statusFor(video, audio);
     }
 
     private List<ShareVideoCompatRow> listFolderVideoCompatRows(ShareEntry folder) throws Exception {
@@ -327,21 +367,22 @@ public class SharingService implements CloudflaredListener, FfmpegDownloadListen
         for (Path v : shareRegistry.listVideosUnder(Path.of(folder.getPath()))) {
             CompatUiState state = compatFixService.uiStateForDefaultTrack(v);
             String tooltip = compatFixService.tooltipForDefaultTrack(v);
-            int progress = compatProgressFor(v);
+            AudioFixStatus job = compatJobStatus(v);
             rows.add(new ShareVideoCompatRow(
                     v,
                     v.getFileName().toString(),
                     state,
-                    progress,
+                    job.progress(),
                     tooltip,
                     canPrepareCompat(state, compatFixService.isAvailable()),
-                    canCancelCompat(state)));
+                    canCancelCompat(state),
+                    job.queueAhead() != null ? job.queueAhead() : 0,
+                    job.speed(),
+                    job.etaSeconds(),
+                    job.startedBy(),
+                    job.startedByLabel()));
         }
         return rows;
-    }
-
-    private int compatProgressFor(Path video) throws Exception {
-        return compatFixService.progressForDefaultTrack(video);
     }
 
     private static boolean canPrepareCompat(CompatUiState state, boolean encoderAvailable) {
@@ -414,9 +455,40 @@ public class SharingService implements CloudflaredListener, FfmpegDownloadListen
     }
 
     public List<ViewerView> activeViewers() {
+        Map<String, Integer> waitingProgress = waitingProgressByDisplayName();
         return viewerRegistry.activeViewers().stream()
-                .map(v -> new ViewerView(v.key(), v.device(), v.fileName(), v.viaTunnel()))
+                .map(v -> {
+                    Integer pct = waitingProgress.get(v.fileName());
+                    String detail = pct != null ? "Waiting for conversion" : null;
+                    return new ViewerView(v.key(), v.device(), v.fileName(), v.viaTunnel(), pct, detail);
+                })
                 .toList();
+    }
+
+    private Map<String, Integer> waitingProgressByDisplayName() {
+        Map<String, Integer> out = new HashMap<>();
+        try {
+            for (VideoFile vf : shareRegistry.listVideos()) {
+                Path p = vf.path();
+                var media = audioFixService.probe(p);
+                int audio = audioFixService.defaultAudioIndex(media);
+                AudioFixStatus compat = compatFixService.statusFor(p, audio);
+                if (isWaiting(compat)) {
+                    out.put(vf.displayName(), compat.progress());
+                    continue;
+                }
+                AudioFixStatus audioSt = audioFixService.statusFor(p, audio);
+                if (isWaiting(audioSt)) {
+                    out.put(vf.displayName(), audioSt.progress());
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return out;
+    }
+
+    private static boolean isWaiting(AudioFixStatus st) {
+        return st.status() == AudioFixJobState.QUEUED || st.status() == AudioFixJobState.RUNNING;
     }
 
     public int activeViewerCount() {

@@ -15,5 +15,10 @@ public record ShareListItem(
         String fileCompatTooltip,
         boolean fileCompatCanPrepare,
         boolean fileCompatCanCancel,
+        int fileCompatQueueAhead,
+        Double fileCompatSpeed,
+        Integer fileCompatEtaSeconds,
+        com.solocrew.crewcast.media.ConversionStartedBy fileCompatStartedBy,
+        String fileCompatStartedByLabel,
         java.util.List<ShareVideoCompatRow> folderVideos) {
 }

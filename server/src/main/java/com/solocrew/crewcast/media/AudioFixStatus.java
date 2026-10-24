@@ -4,5 +4,14 @@ public record AudioFixStatus(
         AudioFixJobState status,
         int progress,
         String message,
-        String cacheKey) {
+        String cacheKey,
+        Double speed,
+        Integer etaSeconds,
+        ConversionStartedBy startedBy,
+        String startedByLabel,
+        Integer queueAhead) {
+
+    public AudioFixStatus(AudioFixJobState status, int progress, String message, String cacheKey) {
+        this(status, progress, message, cacheKey, null, null, null, null, null);
+    }
 }

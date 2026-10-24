@@ -1,8 +1,13 @@
 package com.solocrew.crewcast;
 
+import com.solocrew.crewcast.access.ClientIpResolver;
+import com.solocrew.crewcast.facade.SharingService;
 import com.solocrew.crewcast.media.AudioFixService;
 import com.solocrew.crewcast.media.AudioFixStatus;
 import com.solocrew.crewcast.media.CompatFixService;
+import com.solocrew.crewcast.media.ConversionProgressDto;
+import com.solocrew.crewcast.viewers.UserAgentParser;
+import com.solocrew.crewcast.viewers.ViewerRegistry;
 import com.solocrew.crewcast.media.CompatPlaybackPolicy;
 import com.solocrew.crewcast.media.CompatStatusMapper;
 import com.solocrew.crewcast.media.CompatUiState;
@@ -28,6 +33,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
+import jakarta.servlet.http.HttpServletRequest;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -45,18 +51,24 @@ public class VideoController {
     private final AudioFixService audioFixService;
     private final CompatFixService compatFixService;
     private final SubtitleService subtitleService;
+    private final ViewerRegistry viewerRegistry;
+    private final SharingService sharingService;
 
     public VideoController(
             ShareRegistry shareRegistry,
             SettingsStore settingsStore,
             AudioFixService audioFixService,
             CompatFixService compatFixService,
-            SubtitleService subtitleService) {
+            SubtitleService subtitleService,
+            ViewerRegistry viewerRegistry,
+            SharingService sharingService) {
         this.shareRegistry = shareRegistry;
         this.settingsStore = settingsStore;
         this.audioFixService = audioFixService;
         this.compatFixService = compatFixService;
         this.subtitleService = subtitleService;
+        this.viewerRegistry = viewerRegistry;
+        this.sharingService = sharingService;
     }
 
     @GetMapping("/api/videos")
@@ -128,14 +140,14 @@ public class VideoController {
                 settingsStore.getSettings().isChapterThumbnails(),
                 tracks,
                 selected,
-                new AudioProgressDto(audioStatus.status().name(), audioStatus.progress(), audioStatus.message()),
+                ConversionProgressDto.from(audioStatus),
                 media.mainVideoCodec(),
                 warning,
                 subtitles,
                 captionsDefault.name(),
                 compatRecommended,
                 compatFixService.isAvailable(),
-                new AudioProgressDto(compatStatus.status().name(), compatStatus.progress(), compatStatus.message()),
+                ConversionProgressDto.from(compatStatus),
                 vf,
                 compatState.name(),
                 viewerMayPrepare,
@@ -147,53 +159,85 @@ public class VideoController {
     }
 
     @GetMapping("/api/videos/{id}/compat-status")
-    public ResponseEntity<AudioProgressDto> compatStatus(
+    public ResponseEntity<ConversionProgressDto> compatStatus(
             @PathVariable String id,
-            @RequestParam(name = "audio", defaultValue = "0") int audio) throws Exception {
-        Path path = shareRegistry.resolvePath(id).orElse(null);
-        if (path == null) {
+            @RequestParam(name = "audio", defaultValue = "0") int audio,
+            HttpServletRequest request) throws Exception {
+        VideoFile video = shareRegistry.findById(id).orElse(null);
+        if (video == null) {
             return ResponseEntity.notFound().build();
         }
+        touchViewer(request, video);
+        Path path = video.path();
         AudioFixStatus st = compatFixService.statusFor(path, audio, true);
-        return ResponseEntity.ok(new AudioProgressDto(st.status().name(), st.progress(), st.message()));
+        return ResponseEntity.ok(ConversionProgressDto.from(st));
     }
 
     @PostMapping("/api/videos/{id}/compat/prepare")
-    public ResponseEntity<AudioProgressDto> prepareCompat(
+    public ResponseEntity<ConversionProgressDto> prepareCompat(
             @PathVariable String id,
-            @RequestParam(name = "audio", defaultValue = "0") int audio) throws Exception {
-        Path path = shareRegistry.resolvePath(id).orElse(null);
-        if (path == null) {
+            @RequestParam(name = "audio", defaultValue = "0") int audio,
+            HttpServletRequest request) throws Exception {
+        VideoFile video = shareRegistry.findById(id).orElse(null);
+        if (video == null) {
             return ResponseEntity.notFound().build();
         }
-        AudioFixStatus st = compatFixService.prepareCompat(path, audio, true);
-        return ResponseEntity.ok(new AudioProgressDto(st.status().name(), st.progress(), st.message()));
+        touchViewer(request, video);
+        Path path = video.path();
+        String label = viewerLabel(request);
+        AudioFixStatus st = compatFixService.prepareCompat(path, audio, true, label);
+        return ResponseEntity.ok(ConversionProgressDto.from(st));
     }
 
     @GetMapping("/api/videos/{id}/audio-status")
-    public ResponseEntity<AudioProgressDto> audioStatus(
+    public ResponseEntity<ConversionProgressDto> audioStatus(
             @PathVariable String id,
-            @RequestParam(name = "audio", defaultValue = "0") int audio) throws Exception {
+            @RequestParam(name = "audio", defaultValue = "0") int audio,
+            HttpServletRequest request) throws Exception {
 
-        Path path = shareRegistry.resolvePath(id).orElse(null);
-        if (path == null) {
+        VideoFile video = shareRegistry.findById(id).orElse(null);
+        if (video == null) {
             return ResponseEntity.notFound().build();
         }
+        touchViewer(request, video);
+        Path path = video.path();
         AudioFixStatus st = audioFixService.statusFor(path, audio, true);
-        return ResponseEntity.ok(new AudioProgressDto(st.status().name(), st.progress(), st.message()));
+        return ResponseEntity.ok(ConversionProgressDto.from(st));
     }
 
     @PostMapping("/api/videos/{id}/audio/prepare")
-    public ResponseEntity<AudioProgressDto> prepareAudio(
+    public ResponseEntity<ConversionProgressDto> prepareAudio(
             @PathVariable String id,
-            @RequestParam(name = "audio", defaultValue = "0") int audio) throws Exception {
+            @RequestParam(name = "audio", defaultValue = "0") int audio,
+            HttpServletRequest request) throws Exception {
 
-        Path path = shareRegistry.resolvePath(id).orElse(null);
-        if (path == null) {
+        VideoFile video = shareRegistry.findById(id).orElse(null);
+        if (video == null) {
             return ResponseEntity.notFound().build();
         }
-        AudioFixStatus st = audioFixService.prepareAudio(path, audio);
-        return ResponseEntity.ok(new AudioProgressDto(st.status().name(), st.progress(), st.message()));
+        touchViewer(request, video);
+        Path path = video.path();
+        AudioFixStatus st = audioFixService.prepareAudio(path, audio, viewerLabel(request));
+        return ResponseEntity.ok(ConversionProgressDto.from(st));
+    }
+
+    private void touchViewer(HttpServletRequest request, VideoFile video) {
+        if (request == null) {
+            return;
+        }
+        viewerRegistry.recordView(
+                ClientIpResolver.clientIp(request),
+                request.getHeader("User-Agent"),
+                video.displayName(),
+                ClientIpResolver.isTunnelRequest(request));
+        sharingService.notifyViewersChanged();
+    }
+
+    private static String viewerLabel(HttpServletRequest request) {
+        if (request == null) {
+            return null;
+        }
+        return UserAgentParser.viewerLabel(request.getHeader("User-Agent"));
     }
 
     @GetMapping("/stream/{id}")
@@ -372,23 +416,20 @@ public class VideoController {
             String prepareTimeHint) {
     }
 
-    public record AudioProgressDto(String status, int progress, String message) {
-    }
-
     public record VideoDetails(
             String id,
             String title,
             boolean chaptersEnabled,
             List<AudioTrackDto> audioTracks,
             int selectedAudio,
-            AudioProgressDto audio,
+            ConversionProgressDto audio,
             String videoCodec,
             String warning,
             List<SubtitleService.SubtitleDto> subtitles,
             String defaultCaptions,
             boolean compatRecommended,
             boolean compatEncoderAvailable,
-            AudioProgressDto compat,
+            ConversionProgressDto compat,
             VideoFormat videoFormat,
             String compatState,
             boolean compatViewerPrepareAllowed,
