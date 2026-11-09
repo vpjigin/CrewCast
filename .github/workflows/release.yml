@@ -85,8 +85,9 @@ jobs:
           set -euo pipefail
           deb=dist/Crewcast-linux-x64.deb
           dpkg-deb -I "$deb"
-          dpkg-deb -c "$deb" | grep -E '\.desktop|crewcast\.png|bin/crewcast'
-          dpkg-deb -c "$deb" | grep -q ' ./opt/crewcast/bin/crewcast$'
+          dpkg-deb -c "$deb" > "$RUNNER_TEMP/deb-list.txt"
+          grep -E '\.desktop|crewcast\.png|bin/crewcast' "$RUNNER_TEMP/deb-list.txt"
+          grep -q ' ./opt/crewcast/bin/crewcast$' "$RUNNER_TEMP/deb-list.txt"
           tmp=$(mktemp -d); dpkg-deb -x "$deb" "$tmp"; dpkg-deb -e "$deb" "$tmp/DEBIAN"
           echo "--- desktop file ---"; cat "$tmp"/opt/crewcast/lib/*.desktop
           echo "--- postinst ---"; cat "$tmp/DEBIAN/postinst"
