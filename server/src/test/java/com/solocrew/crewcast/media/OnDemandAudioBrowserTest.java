@@ -74,6 +74,8 @@ class OnDemandAudioBrowserTest extends CrewcastSpringTestBase {
         s.setFixAudioForBrowsers(true);
         s.setPrepareAudioInAdvance(PrepareAudioMode.OFF);
         s.setRequirePrivateKey(true);
+        // MockMvc hits loopback without ?t= for some status/stream checks.
+        s.setAllowSameWifiAccess(true);
         settingsStore.update(s);
         shareRegistry.addFile(fixture);
         audioFixService.clearCache();

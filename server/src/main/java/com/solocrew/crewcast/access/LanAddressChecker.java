@@ -16,7 +16,10 @@ public final class LanAddressChecker {
         try {
             InetAddress addr = InetAddress.getByName(ip);
             if (!(addr instanceof Inet4Address)) {
-                return addr.isSiteLocalAddress() || addr.isLinkLocalAddress();
+                return addr.isLoopbackAddress()
+                        || addr.isSiteLocalAddress()
+                        || addr.isLinkLocalAddress()
+                        || isUniqueLocalIpv6(addr);
             }
             byte[] b = addr.getAddress();
             int b0 = b[0] & 0xff;
@@ -34,5 +37,15 @@ public final class LanAddressChecker {
         } catch (UnknownHostException e) {
             return false;
         }
+    }
+
+    /** RFC 4193 unique local addresses: fc00::/7. */
+    private static boolean isUniqueLocalIpv6(InetAddress addr) {
+        byte[] b = addr.getAddress();
+        if (b.length != 16) {
+            return false;
+        }
+        int b0 = b[0] & 0xff;
+        return b0 == 0xfc || b0 == 0xfd;
     }
 }

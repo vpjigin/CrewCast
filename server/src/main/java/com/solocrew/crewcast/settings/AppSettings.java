@@ -16,7 +16,7 @@ public class AppSettings {
 
     private List<ShareEntry> shares = new ArrayList<>();
     private boolean requirePrivateKey = true;
-    private boolean allowSameWifiAccess = true;
+    private boolean allowSameWifiAccess = false;
     private TunnelProtocol tunnelProtocol = TunnelProtocol.AUTOMATIC;
     private boolean startTunnelWhenSharingStarts = true;
     private boolean keepComputerAwake = true;

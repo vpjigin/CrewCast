@@ -635,17 +635,29 @@ public class SharingService implements CloudflaredListener, FfmpegDownloadListen
         accessSession.regenerateToken();
     }
 
+    public boolean isPrivateKeyRequired() {
+        return settingsStore.getSettings().isRequirePrivateKey();
+    }
+
     public SharingLinks currentLinks() {
         String token = accessSession.getToken();
         int port = portHolder.getPort();
+        String path = linkPath(settingsStore.getSettings().isRequirePrivateKey(), token);
         String publicBase = cloudflaredManager.getPublicUrl();
         String publicLink = publicBase != null && !publicBase.isBlank()
-                ? publicBase + "/?t=" + token
+                ? publicBase + path
                 : "";
         String lanLink = port > 0
-                ? "http://" + LanIpDetector.primaryLanIp() + ":" + port + "/?t=" + token
+                ? "http://" + LanIpDetector.primaryLanIp() + ":" + port + path
                 : "";
         return new SharingLinks(publicLink, lanLink, token);
+    }
+
+    static String linkPath(boolean requireKey, String token) {
+        if (requireKey) {
+            return "/?" + AccessSession.QUERY_PARAM + "=" + token;
+        }
+        return "/";
     }
 
     public List<ViewerView> activeViewers() {

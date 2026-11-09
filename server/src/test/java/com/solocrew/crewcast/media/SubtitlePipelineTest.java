@@ -1,6 +1,7 @@
 package com.solocrew.crewcast.media;
 
 import com.solocrew.crewcast.access.SharingState;
+import com.solocrew.crewcast.settings.SettingsStore;
 import com.solocrew.crewcast.support.CrewcastSpringTestBase;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,9 +37,16 @@ class SubtitlePipelineTest extends CrewcastSpringTestBase {
     @Autowired
     SharingState sharingState;
 
+    @Autowired
+    SettingsStore settingsStore;
+
     @BeforeEach
     void sharingOn() {
         sharingState.setSharingActive(true);
+        // 404 path is hit without ?t= from MockMvc loopback.
+        var s = settingsStore.getSettings();
+        s.setAllowSameWifiAccess(true);
+        settingsStore.update(s);
     }
 
     @BeforeAll

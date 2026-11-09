@@ -58,11 +58,19 @@ jpackage \
   --app-version "$APP_VERSION" \
   --vendor Solocrew \
   --copyright "Copyright (c) 2026 Solocrew" \
+  --description "Share videos from your computer over Wi-Fi or the internet" \
   --icon "$ICON" \
   --input "$INPUT" \
   --main-jar "$(basename "$JAR")" \
   --main-class org.springframework.boot.loader.launch.JarLauncher \
-  --runtime-image "$RUNTIME"
+  --runtime-image "$RUNTIME" \
+  --install-dir /opt \
+  --linux-package-name crewcast \
+  --linux-shortcut \
+  --linux-menu-group "AudioVideo;Video;" \
+  --linux-app-category video \
+  --linux-deb-maintainer solocrew.me@gmail.com \
+  --resource-dir "${ROOT}/packaging/linux/jpackage"
 
 for candidate in "${ROOT}/dist/crewcast_${APP_VERSION}-1_amd64.deb" "${ROOT}/dist/crewcast_"*.deb; do
   if [[ -f "$candidate" && "$candidate" != "$OUT" ]]; then

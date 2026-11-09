@@ -113,6 +113,8 @@ public class MainFrame extends JFrame implements SharingUiListener {
     private StyledButton wifiCopyBtn;
     private StyledButton wifiOpenBtn;
     private StyledButton newLinkBtn;
+    private JLabel sessionIconLabel;
+    private JLabel sessionHintLabel;
     private QrCodeTile qrCodeTile;
     private final StyledButton removeAllSharesBtn = new StyledButton("Remove all");
     private StyledButton addFolderHeaderBtn;
@@ -636,11 +638,12 @@ public class MainFrame extends JFrame implements SharingUiListener {
 
         JPanel sessionRow = new JPanel(new MigLayout("ins 0, gap 8, fillx", "[pref!][grow,fill][pref!]", "[]"));
         sessionRow.setOpaque(false);
-        sessionRow.add(new JLabel(Icons.of("lock", 13, CrewcastTheme.MUTED)), "aligny center");
-        JLabel sessionHint = new JLabel("The ?t= key is private to this session");
-        sessionHint.setFont(Fonts.ui(500, 12.5f));
-        sessionHint.setForeground(CrewcastTheme.MUTED);
-        sessionRow.add(sessionHint, "growx, wmin 0");
+        sessionIconLabel = new JLabel(Icons.of("lock", 13, CrewcastTheme.MUTED));
+        sessionRow.add(sessionIconLabel, "aligny center");
+        sessionHintLabel = new JLabel("The ?t= key is private to this session");
+        sessionHintLabel.setFont(Fonts.ui(500, 12.5f));
+        sessionHintLabel.setForeground(CrewcastTheme.MUTED);
+        sessionRow.add(sessionHintLabel, "growx, wmin 0");
         newLinkBtn.packToContent();
         sessionRow.add(newLinkBtn, "aligny center, shrink 0");
         card.add(sessionRow, "growx, wrap");
@@ -953,6 +956,25 @@ public class MainFrame extends JFrame implements SharingUiListener {
         if (dialog.isSaved()) {
             sharingService.saveSettings(dialog.result());
             syncFixAudioToggleFromSettings();
+            refreshDynamicUi();
+        }
+    }
+
+    private void updateSessionHint(boolean keyRequired) {
+        if (sessionIconLabel == null || sessionHintLabel == null) {
+            return;
+        }
+        if (keyRequired) {
+            sessionIconLabel.setIcon(Icons.of("lock", 13, CrewcastTheme.MUTED));
+            sessionHintLabel.setText("The ?t= key is private to this session");
+            sessionHintLabel.setForeground(CrewcastTheme.MUTED);
+            sessionHintLabel.setToolTipText(null);
+        } else {
+            sessionIconLabel.setIcon(Icons.of("warning", 13, CrewcastTheme.DANGER_TEXT));
+            sessionHintLabel.setText("Anyone with this link can watch");
+            sessionHintLabel.setForeground(CrewcastTheme.DANGER_TEXT);
+            sessionHintLabel.setToolTipText(
+                    "Turn on “Require private key in links” in Settings to protect your links");
         }
     }
 
@@ -1427,6 +1449,8 @@ public class MainFrame extends JFrame implements SharingUiListener {
         setLinkCardDimmed(qrCard, linkAlpha);
         qrSegment.setEnabled(sharing);
 
+        boolean keyRequired = sharingService.isPrivateKeyRequired();
+        updateSessionHint(keyRequired);
         if (sharing) {
             String publicLink = links.publicLink();
             if (publicLink.isBlank()) {
@@ -1436,7 +1460,10 @@ public class MainFrame extends JFrame implements SharingUiListener {
             wifiLinkField.setActiveUrl(links.lanLink());
             setLinkActionsEnabled(true);
             if (newLinkBtn != null) {
-                newLinkBtn.setEnabled(true);
+                newLinkBtn.setEnabled(keyRequired);
+                newLinkBtn.setToolTipText(keyRequired
+                        ? null
+                        : "Links have no private key while it is turned off in Settings");
             }
         } else {
             publicLinkField.setPlaceholder("Start sharing to get a link");
@@ -1444,6 +1471,7 @@ public class MainFrame extends JFrame implements SharingUiListener {
             setLinkActionsEnabled(false);
             if (newLinkBtn != null) {
                 newLinkBtn.setEnabled(false);
+                newLinkBtn.setToolTipText(null);
             }
         }
 
