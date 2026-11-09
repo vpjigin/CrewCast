@@ -221,7 +221,7 @@ Click **Stop sharing** when you're done — the link stops working immediately. 
 - **TV / projector compatibility mode** — optional H.264 + AAC conversion for devices that cannot decode 10‑bit HEVC or exotic codecs (web player toggle and/or host prep in Settings; see [TVs and projectors](#tvs-and-projectors))
 - **Subtitles** — embedded and sidecar text tracks as WebVTT in the player
 - **Chapter thumbnails** — scrubbing grid (default 20 tiles) to jump through long videos
-- **Access key** — a private `?t=` token per sharing session; **New link** rotates it
+- **Access key** — a private `?t=` token per sharing session when **Require private key** is on (default); **New link** rotates it
 - **No accounts, no analytics** — nothing phones home to Solocrew
 
 Supported video extensions: `.mp4`, `.mkv`, `.mov`, `.webm`, `.m4v`.
@@ -262,15 +262,15 @@ Shared folders expose **every file type** for download. On the web library you c
 
 | Link | What it is |
 |------|------------|
-| **Public** | `https://….trycloudflare.com/?t=…` — HTTPS through Cloudflare’s Quick Tunnel to your computer |
-| **Wi‑Fi** | `http://<your-LAN-IP>:<port>/?t=…` — direct on the local network |
+| **Public** | `https://….trycloudflare.com/` — HTTPS through Cloudflare’s Quick Tunnel to your computer (`?t=…` when Require private key is on) |
+| **Wi‑Fi** | `http://<your-LAN-IP>:<port>/` — direct on the local network (`?t=…` when the key is required) |
 
-The **`t` query parameter** is the access key for this sharing session. Anyone with the **full public link** (including `t`) can open the library and watch **while sharing is on**. Treat it like a password.
+When **Require private key** is on, the **`t` query parameter** is the access key for this sharing session — treat it like a password. With the key off, anyone who has the link can open the library and watch **while sharing is on**.
 
-- **New link** (desktop) — generates a new access key; old links stop working
+- **New link** (desktop) — generates a new access key; old links (and the 7‑day browser cookie set after a valid key) stop working. Restarting sharing also rotates the key.
 - **Stop sharing** — ends the session; links return **503 Sharing is off** until you start again
 
-By default, **Require private key** is on. On the same Wi‑Fi, the app can allow LAN clients without the key (Settings); tunnel visitors always need the key when it is required.
+By default, **Require private key** is on and **Allow same‑Wi‑Fi access** is off. When same‑Wi‑Fi access is on, devices on your network can open the link without the key; tunnel visitors always need the key when it is required. After a successful key, the browser keeps a 7‑day access cookie so later visits without `?t=` still work until **New link** or a new sharing session.
 
 Cloudflared is downloaded once into `~/.crewcast/bin/` if it is not already on your `PATH` (see [PRIVACY.md](PRIVACY.md)).
 
@@ -450,7 +450,7 @@ Data directory: `~/.crewcast/` (settings, cache, optional `bin/` for cloudflared
 | `POST /api/videos/{id}/audio/prepare` | Start preparing a track |
 | `GET /subtitles/{id}/{index}.vtt` | WebVTT captions (UTF-8) |
 
-When sharing is off, protected routes respond with **503**. When **Require private key** is on, missing or wrong `t` yields **403** (except configured LAN bypass).
+When sharing is off, protected routes respond with **503**. When **Require private key** is on, missing or wrong `t` yields **403** (except an optional same‑Wi‑Fi LAN bypass, off by default; a valid 7‑day access cookie also grants access until the key is rotated).
 
 ---
 
