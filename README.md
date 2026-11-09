@@ -153,9 +153,7 @@ Enter your password when asked. (The `./` in front of the file name is important
 
 **Step 3 — Open Crewcast**
 
-```bash
-/opt/crewcast/bin/crewcast
-```
+Open **Crewcast** from your app menu (Activities → search "Crewcast", or Sound & Video). You can also run `/opt/crewcast/bin/crewcast` from a terminal.
 
 ✅ Done! Now see [Start sharing](#start-sharing).
 

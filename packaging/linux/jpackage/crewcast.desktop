@@ -1,0 +1,20 @@
+[Desktop Entry]
+Name=Crewcast
+GenericName=Video Sharing
+Comment=APPLICATION_DESCRIPTION
+Exec=APPLICATION_LAUNCHER
+Icon=APPLICATION_ICON
+Terminal=false
+Type=Application
+Categories=DEPLOY_BUNDLE_CATEGORY
+Keywords=video;stream;share;wifi;cast;
+# StartupWMClass: AWT XToolkit (JDK 21) sets awtAppClassName from the bottom
+# stack frame when the toolkit is first created (dots -> dashes). The jpackage
+# launcher starts org.springframework.boot.loader.launch.JarLauncher, and
+# DesktopApp.main calls SwingUtilities.invokeLater on that same main thread,
+# which initializes the toolkit before the EDT runs — so this should be
+# JarLauncher, not DesktopApp. MUST be confirmed on a real Linux desktop with:
+#   xprop WM_CLASS
+# (click the Crewcast window) and adjust if the second string differs.
+StartupWMClass=org-springframework-boot-loader-launch-JarLauncher
+DESKTOP_MIMES
