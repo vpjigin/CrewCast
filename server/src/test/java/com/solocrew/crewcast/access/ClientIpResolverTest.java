@@ -59,6 +59,12 @@ class ClientIpResolverTest {
         assertFalse(ClientIpResolver.isLoopbackPeer("localhost"));
         assertFalse(ClientIpResolver.isLoopbackPeer(null));
         assertFalse(ClientIpResolver.isLoopbackPeer(""));
+        assertFalse(ClientIpResolver.isLoopbackPeer("cafe"));
+        assertFalse(ClientIpResolver.isLoopbackPeer("dead.beef"));
+        assertFalse(ClientIpResolver.isLoopbackPeer("face"));
+        assertTrue(ClientIpResolver.isLoopbackPeer("127.0.0.1"));
+        assertTrue(ClientIpResolver.isLoopbackPeer("::1"));
+        assertTrue(ClientIpResolver.isLoopbackPeer("0:0:0:0:0:0:0:1"));
         assertTrue(ClientIpResolver.isLoopbackPeer("[::1]"));
     }
 }

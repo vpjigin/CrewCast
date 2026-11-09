@@ -221,7 +221,7 @@ Click **Stop sharing** when you're done — the link stops working immediately. 
 - **TV / projector compatibility mode** — optional H.264 + AAC conversion for devices that cannot decode 10‑bit HEVC or exotic codecs (web player toggle and/or host prep in Settings; see [TVs and projectors](#tvs-and-projectors))
 - **Subtitles** — embedded and sidecar text tracks as WebVTT in the player
 - **Chapter thumbnails** — scrubbing grid (default 20 tiles) to jump through long videos
-- **Access key** — a private `?t=` token per sharing session; **New link** rotates it
+- **Access key** — a private `?t=` token per sharing session when **Require private key** is on (default); **New link** rotates it
 - **No accounts, no analytics** — nothing phones home to Solocrew
 
 Supported video extensions: `.mp4`, `.mkv`, `.mov`, `.webm`, `.m4v`.
