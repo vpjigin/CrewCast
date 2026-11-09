@@ -61,29 +61,41 @@
     unknown: {
       label: "Download Crewcast",
       href: "#download",
-      note: "Choose your platform below, or use the arrow",
+      note: "Crewcast runs on your computer – pick Mac, Windows or Linux with the arrow",
       tab: "mac",
     },
   };
 
   function detectOs() {
+    var ua = navigator.userAgent || "";
+    var mobile = false;
+    try {
+      if (navigator.userAgentData && navigator.userAgentData.mobile === true) {
+        mobile = true;
+      }
+    } catch (e) {}
+    if (mobile || /iphone|ipod|ipad|android/i.test(ua)) return "unknown";
+    // iPadOS desktop-mode UA looks like Macintosh but has a touchscreen.
+    if (/macintosh/i.test(ua) && navigator.maxTouchPoints > 1) return "unknown";
+
     var platform = "";
     try {
       if (navigator.userAgentData && navigator.userAgentData.platform) {
         platform = String(navigator.userAgentData.platform);
       }
-    } catch (e) {}
+    } catch (e2) {}
     if (!platform) {
-      platform = navigator.userAgent || navigator.platform || "";
+      platform = ua || navigator.platform || "";
     }
     var p = platform.toLowerCase();
-    if (/mac|iphone|ipad|ipod|darwin/.test(p)) return "mac";
+    if (/cros/.test(p) || /cros/.test(ua.toLowerCase())) return "unknown";
+    if (/mac|darwin/.test(p)) return "mac";
     if (/win/.test(p)) return "windows";
-    if (/linux|android|cros/.test(p)) return "linux";
-    var ua = (navigator.userAgent || "").toLowerCase();
-    if (/mac os|macintosh/.test(ua)) return "mac";
-    if (/windows/.test(ua)) return "windows";
-    if (/linux|android/.test(ua)) return "linux";
+    if (/linux/.test(p)) return "linux";
+    var ual = ua.toLowerCase();
+    if (/mac os|macintosh/.test(ual)) return "mac";
+    if (/windows/.test(ual)) return "windows";
+    if (/linux/.test(ual)) return "linux";
     return "unknown";
   }
 
@@ -132,35 +144,35 @@
   if (menu) menuItems = $all('[role="menuitem"]', menu);
   var menuOpen = false;
 
-  function setMenuOpen(open) {
+  function setMenuOpen(open, restoreFocus) {
     menuOpen = open;
     if (!menu || !menuBtn) return;
     menu.classList.toggle("is-open", open);
     menuBtn.setAttribute("aria-expanded", open ? "true" : "false");
-    if (!open) menuBtn.focus();
+    if (!open && restoreFocus) menuBtn.focus();
   }
 
-  function closeMenu() {
-    if (menuOpen) setMenuOpen(false);
+  function closeMenu(restoreFocus) {
+    if (menuOpen) setMenuOpen(false, !!restoreFocus);
   }
 
   if (menuBtn && menu) {
     menuBtn.addEventListener("click", function (e) {
       e.stopPropagation();
-      setMenuOpen(!menuOpen);
+      setMenuOpen(!menuOpen, false);
       if (menuOpen && menuItems.length) menuItems[0].focus();
     });
 
     document.addEventListener("click", function (e) {
       if (!menuOpen) return;
-      if (!menu.contains(e.target) && e.target !== menuBtn) closeMenu();
+      if (!menu.contains(e.target) && e.target !== menuBtn) closeMenu(false);
     });
 
     document.addEventListener("keydown", function (e) {
       if (!menuOpen) return;
       if (e.key === "Escape") {
         e.preventDefault();
-        closeMenu();
+        closeMenu(true);
       }
     });
 
@@ -182,13 +194,14 @@
         e.preventDefault();
         menuItems[menuItems.length - 1].focus();
       } else if (e.key === "Tab") {
-        closeMenu();
+        closeMenu(false);
       }
     });
 
     menuItems.forEach(function (item) {
-      item.addEventListener("click", function () {
-        closeMenu();
+      item.addEventListener("click", function (e) {
+        // Keyboard activation of a link fires click with detail === 0.
+        closeMenu(e.detail === 0);
       });
     });
   }
