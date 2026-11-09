@@ -31,7 +31,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             artifact: Crewcast-macos-arm64
             ext: dmg
             script: packaging/build-macos.sh
@@ -78,6 +78,23 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: ./${{ matrix.script }}
+
+      - name: Inspect .deb
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          deb=dist/Crewcast-linux-x64.deb
+          dpkg-deb -I "$deb"
+          dpkg-deb -c "$deb" > "$RUNNER_TEMP/deb-list.txt"
+          grep -E '\.desktop|crewcast\.png|bin/crewcast' "$RUNNER_TEMP/deb-list.txt"
+          grep -q ' ./opt/crewcast/bin/crewcast$' "$RUNNER_TEMP/deb-list.txt"
+          tmp=$(mktemp -d); dpkg-deb -x "$deb" "$tmp"; dpkg-deb -e "$deb" "$tmp/DEBIAN"
+          echo "--- desktop file ---"; cat "$tmp"/opt/crewcast/lib/*.desktop
+          echo "--- postinst ---"; cat "$tmp/DEBIAN/postinst"
+          echo "--- prerm ---"; cat "$tmp/DEBIAN/prerm"
+          grep -q '^Name=Crewcast$' "$tmp"/opt/crewcast/lib/*.desktop
+          grep -q '^Categories=AudioVideo;Video;$' "$tmp"/opt/crewcast/lib/*.desktop
+          ! grep -qE 'APPLICATION_|DEPLOY_BUNDLE|DESKTOP_MIMES' "$tmp"/opt/crewcast/lib/*.desktop
 
       - name: Upload installer
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
