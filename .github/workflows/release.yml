@@ -31,7 +31,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             artifact: Crewcast-macos-arm64
             ext: dmg
             script: packaging/build-macos.sh
