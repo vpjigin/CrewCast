@@ -59,7 +59,7 @@ class SettingsDialog extends JDialog {
         ToggleSwitch requireKey = addToggleRow(body, "Require private key in links",
                 "Adds ?t= to every link so guessed addresses show nothing", workingCopy.isRequirePrivateKey());
         ToggleSwitch allowWifi = addToggleRow(body, "Allow same‑Wi‑Fi access",
-                "Lets devices on your network connect directly", workingCopy.isAllowSameWifiAccess());
+                "Lets devices on your network connect without the key", workingCopy.isAllowSameWifiAccess());
 
         addSection(body, "Tunnel");
         JComboBox<AppSettings.TunnelProtocol> protocol = addChoiceRow(body, "Connection type",
