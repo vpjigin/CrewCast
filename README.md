@@ -7,6 +7,8 @@ No upload, no account, no cloud storage.
 
 [![Latest release](https://img.shields.io/github/v/release/vpjigin/CrewCast)](https://github.com/vpjigin/CrewCast/releases/latest) [![License: MIT](https://img.shields.io/github/license/vpjigin/CrewCast)](LICENSE)
 
+**Website:** https://vpjigin.github.io/CrewCast/
+
 ![Crewcast sharing a folder](docs/images/sharing-started.png)
 
 </div>
