@@ -64,7 +64,7 @@ jpackage \
   --main-jar "$(basename "$JAR")" \
   --main-class org.springframework.boot.loader.launch.JarLauncher \
   --runtime-image "$RUNTIME" \
-  --install-dir /opt/crewcast \
+  --install-dir /opt \
   --linux-package-name crewcast \
   --linux-shortcut \
   --linux-menu-group "AudioVideo;Video;" \

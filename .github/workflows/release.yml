@@ -86,6 +86,7 @@ jobs:
           deb=dist/Crewcast-linux-x64.deb
           dpkg-deb -I "$deb"
           dpkg-deb -c "$deb" | grep -E '\.desktop|crewcast\.png|bin/crewcast'
+          dpkg-deb -c "$deb" | grep -q ' ./opt/crewcast/bin/crewcast$'
           tmp=$(mktemp -d); dpkg-deb -x "$deb" "$tmp"; dpkg-deb -e "$deb" "$tmp/DEBIAN"
           echo "--- desktop file ---"; cat "$tmp"/opt/crewcast/lib/*.desktop
           echo "--- postinst ---"; cat "$tmp/DEBIAN/postinst"
